@@ -595,8 +595,8 @@ def clear_kafka_directories(*args, **kwargs):
         zookeeper_dir = '/data/zookeeper'
         
         # Remove all files including hidden ones
-        subprocess.run(['rm', '-rf', f'{kafka_logs_dir}/*', f'{kafka_logs_dir}/.*'], check=True)
-        subprocess.run(['rm', '-rf', f'{zookeeper_dir}/*', f'{zookeeper_dir}/.*'], check=True)
+        subprocess.run(['sudo', 'rm', '-rf', f'{kafka_logs_dir}/*', f'{kafka_logs_dir}/.*'], check=True)
+        subprocess.run(['sudo', 'rm', '-rf', f'{zookeeper_dir}/*', f'{zookeeper_dir}/.*'], check=True)
         
         print(f"Kafka logs dir: {kafka_logs_dir}, Zookeeper dir: {zookeeper_dir}")
         # Start services
