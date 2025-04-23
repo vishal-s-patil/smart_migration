@@ -21,7 +21,7 @@ load_dotenv()
 
 app = Flask(__name__)
 # BASE_DIR = "/home/mongodb/migration_orchestration"
-BASE_DIR = "/home/vishalpatil/workdir/mongo5-to-mongo7-migration/smart_migration"
+BASE_DIR = "/home/mongodb/smart_migration"
 PROPERTY_FILE = "/etc/mongoremodel.properties"
 BASE_MIGRATION_LOG_DIR = "/var/log/apps/mongodataremodel"
 TOPIC_CREATION_LOG = BASE_DIR + "/logs/create_topics.log"
@@ -1395,7 +1395,7 @@ def api_smart_query():
     try:
         event = request.get_json()
         body = json.loads(event['body'])
-        print(event['body'], type(event['body']))
+        
     
     except Exception as e:
         message_slack(f"Invalid request body: {e}")
