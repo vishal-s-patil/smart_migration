@@ -192,9 +192,9 @@ def delete_specific_key(key, *args, **kwargs):
     except Exception as e:
         return False, f"Failed to delete key: {str(e)}"
 
-def get_panel_count(*args, **kwargs):
+def get_methods_count_form_redis(*args, **kwargs):
     """
-    Gets the count of panels (keys starting with 'read' and 'write').
+    Gets the count of redis keys starting with 'read' and 'write'
     
     Args:
         *args: Variable length argument list
@@ -1218,7 +1218,7 @@ tools = [
     Tool.from_function(func=delete_consumer_keys, name="delete_consumer_keys", description="Deletes all Redis consumer keys."),
     Tool.from_function(func=delete_all_keys, name="delete_all_keys", description="Deletes all keys in Redis."),
     Tool.from_function(func=delete_specific_key, name="delete_specific_key", description="Deletes a specific Redis key."),
-    Tool.from_function(func=get_panel_count, name="get_panel_count", description="Gets the current count of panels in Redis."),
+    Tool.from_function(func=get_methods_count_form_redis, name="get_methods_count_form_redis", description="Gets the count of redis keys referred as methods, starting with 'read' and 'write'"),
     Tool.from_function(func=get_total_keys, name="get_total_keys", description="Gets the total number of keys in Redis."),
     Tool.from_function(func=get_panels_length, name="get_panels_length", description="Gets the length of the panels list in Redis."),
     Tool.from_function(func=check_redis_status, name="check_redis_status", description="Checks the status of the Redis server."),
@@ -1311,8 +1311,8 @@ def api_delete_specific_key(key):
     return jsonify({"success": success, "message": message})
 
 @app.route('/redis/methods/count', methods=['GET'])
-def api_get_panel_count():
-    success, result = get_panel_count()
+def get_methods_form_redis():
+    success, result = get_methods_form_redis()
     if success:
         return jsonify({"success": True, "data": result})
     return jsonify({"success": False, "message": result})
@@ -1324,9 +1324,9 @@ def api_get_total_keys():
         return jsonify({"success": True, "data": result})
     return jsonify({"success": False, "message": result})
 
-@app.route('/redis/remaining/panels', methods=['GET'])
-def api_get_panels_length():
-    success, result = get_panels_length()
+@app.route('/redis/methods/count', methods=['GET'])
+def api_get_methods_count():
+    success, result = get_methods_count_form_redis()
     if success:
         return jsonify({"success": True, "data": result})
     return jsonify({"success": False, "message": result})
