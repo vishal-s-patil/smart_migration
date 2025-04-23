@@ -870,8 +870,6 @@ def kill_migration_processes() -> tuple[bool, str]:
     
     Returns:
         tuple: (success: bool, message: str)
-            - success: True if processes were killed successfully, False otherwise
-            - message: Status message describing the result
     """
     try:
         processes = ['run_producer', 'run_consumer', 'kill_consumer']
@@ -894,7 +892,8 @@ def kill_migration_processes() -> tuple[bool, str]:
                     killed.append(f"{process} (PID: {pid})")
         
         if killed:
-            return True, f"Successfully killed processes: {', '.join(killed)}"
+            killed_str = "\n".join(killed)
+            return True, f"Successfully killed processes:\n{killed_str}"
         return True, "No migration processes were running"
     except Exception as e:
         return False, f"Failed to kill migration processes: {str(e)}"
@@ -1424,8 +1423,8 @@ def api_delete_specific_key(key):
     return jsonify({"success": success, "message": message})
 
 @app.route('/redis/methods/count', methods=['GET'])
-def get_methods_form_redis():
-    success, result = get_methods_form_redis()
+def api_get_methods_count():
+    success, result = get_methods_count_form_redis()
     if success:
         return jsonify({"success": True, "data": result})
     return jsonify({"success": False, "message": result})
@@ -1433,13 +1432,6 @@ def get_methods_form_redis():
 @app.route('/redis/keys/count', methods=['GET'])
 def api_get_total_keys():
     success, result = get_total_keys()
-    if success:
-        return jsonify({"success": True, "data": result})
-    return jsonify({"success": False, "message": result})
-
-@app.route('/redis/methods/count', methods=['GET'])
-def api_get_methods_count():
-    success, result = get_methods_count_form_redis()
     if success:
         return jsonify({"success": True, "data": result})
     return jsonify({"success": False, "message": result})
