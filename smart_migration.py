@@ -861,7 +861,7 @@ def check_migration_processes(*args, **kwargs) -> tuple[bool, dict]:
     except Exception as e:
         return False, f"Failed to check migration processes: {str(e)}"
 
-def kill_migration_processes() -> tuple[bool, str]:
+def kill_migration_processes(*args, **kwargs) -> tuple[bool, str]:
     """
     Kills any running migration processes:
     1. run_producer
