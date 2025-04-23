@@ -959,8 +959,6 @@ def pre_migration_check(*args, **kwargs) -> tuple[bool, str]:
     
     Returns:
         tuple: (success: bool, message: str)
-            - success: True if all checks passed, False otherwise
-            - message: Status message describing the result
     """
     try:
         # 1. Initial health check
@@ -979,9 +977,9 @@ def pre_migration_check(*args, **kwargs) -> tuple[bool, str]:
             return False, "Redis keys not cleared properly"
             
         # 3. Kafka cleanup and topic setup
-        success, message = clear_kafka_directories()
+        success, message = delete_all_kafka_topics()
         if not success:
-            return False, f"Failed to clear Kafka directories: {message}"
+            return False, f"Failed to delete Kafka topics: {message}"
             
         # Create topics
         success, message = run_create_topics()
