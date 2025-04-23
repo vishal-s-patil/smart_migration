@@ -779,7 +779,7 @@ def delete_panels_file(*args, **kwargs) -> tuple[bool, str]:
     except Exception as e:
         return False, f"Failed to delete panels file: {str(e)}"
 
-def clean_migration_logs() -> tuple[bool, str]:
+def clean_migration_logs(*args, **kwargs) -> tuple[bool, str]:
     """
     Cleans the migration logs directory by:
     1. Creating a backup folder with current timestamp
