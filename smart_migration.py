@@ -22,6 +22,7 @@ load_dotenv()
 app = Flask(__name__)
 # BASE_DIR = "/home/mongodb/migration_orchestration"
 BASE_DIR = "/home/mongodb/smart_migration"
+PANELS_FILE_PATH = BASE_DIR + "/panels.txt"     
 PROPERTY_FILE = "/etc/mongoremodel.properties"
 BASE_MIGRATION_LOG_DIR = "/var/log/apps/mongodataremodel"
 TOPIC_CREATION_LOG = BASE_DIR + "/logs/create_topics.log"
@@ -495,7 +496,7 @@ def delete_specific_kafka_topic(topic_name, *args, **kwargs):
     except Exception as e:
         return False, f"Failed to delete topic '{topic_name}': {str(e)}"
 
-def run_create_topics(panels_file_path, num_partitions, *args, **kwargs):
+def run_create_topics(num_partitions, *args, **kwargs):
     """
     Runs the create_topics.py script to create Kafka topics.
     And then verifies from the log file that the topics were created successfully.
@@ -514,7 +515,7 @@ def run_create_topics(panels_file_path, num_partitions, *args, **kwargs):
     """
     try:
         result = subprocess.run(
-            ['python3', 'create_topics.py', panels_file_path, str(num_partitions), '>', TOPIC_CREATION_LOG],
+            ['python3', 'create_topics.py', PANELS_FILE_PATH, str(num_partitions), '>', TOPIC_CREATION_LOG],
             capture_output=True,
             text=True
         )
@@ -529,7 +530,7 @@ def run_create_topics(panels_file_path, num_partitions, *args, **kwargs):
     except Exception as e:
         return False, f"Error running create_topics.py: {str(e)}"
 
-def run_validate_topics(panels_file_path, num_partitions, *args, **kwargs):
+def run_validate_topics(num_partitions, *args, **kwargs):
     """
     Runs the validate_topics.py script to validate Kafka topics.
     And then verifies from the log file that the topics were created successfully.
@@ -548,7 +549,7 @@ def run_validate_topics(panels_file_path, num_partitions, *args, **kwargs):
     """
     try:
         result = subprocess.run(
-            ['python3', 'validate_topics.py', panels_file_path, str(num_partitions), '>', TOPIC_VALIDATION_LOG],
+            ['python3', 'validate_topics.py', PANELS_FILE_PATH, str(num_partitions), '>', TOPIC_VALIDATION_LOG],
             capture_output=True,
             text=True
         )
@@ -1340,8 +1341,8 @@ tools = [
     Tool.from_function(func=check_kafka_status, name="check_kafka_status", description="Checks the status of the Kafka server."),
     Tool.from_function(func=delete_all_kafka_topics, name="delete_all_kafka_topics", description="Deletes all Kafka topics."),
     Tool.from_function(func=delete_specific_kafka_topic, name="delete_specific_kafka_topic", description="Deletes a specific Kafka topic."),
-    Tool.from_function(func=run_create_topics, name="run_create_topics", description="Runs the create_topics.py script to create Kafka topics."),
-    Tool.from_function(func=run_validate_topics, name="run_validate_topics", description="Runs the validate_topics.py script to validate Kafka topics."),
+    Tool.from_function(func=run_create_topics, name="run_create_topics", description="Runs the create_topics.py script to create Kafka topics. this function takes only one argument which is the number of partitions for the topics."),
+    Tool.from_function(func=run_validate_topics, name="run_validate_topics", description="Runs the validate_topics.py script to validate Kafka topics. this function takes only one argument which is the number of partitions for the topics."),
     Tool.from_function(func=clear_kafka_directories, name="clear_kafka_directories", description="Clears Kafka and Zookeeper data directories by stopping the services, removing all files from the data directories, and restarting the services."),
     Tool.from_function(func=start_zookeeper, name="start_zookeeper", description="Starts the Zookeeper service."),
     Tool.from_function(func=stop_zookeeper, name="stop_zookeeper", description="Stops the Zookeeper service."),
@@ -1591,14 +1592,14 @@ def api_delete_specific_kafka_topic(topic_name):
     success, message = delete_specific_kafka_topic(topic_name)
     return jsonify({"success": success, "message": message})
 
-@app.route('/kafka/topics/create/<path:panels_file_path>/<int:num_partitions>', methods=['POST'])
-def api_run_create_topics(panels_file_path, num_partitions):
-    success, message = run_create_topics(panels_file_path, num_partitions)
+@app.route('/kafka/topics/create/<int:num_partitions>', methods=['POST'])
+def api_run_create_topics(num_partitions):
+    success, message = run_create_topics(num_partitions)
     return jsonify({"success": success, "message": message})
 
-@app.route('/kafka/topics/validate/<path:panels_file_path>/<int:num_partitions>', methods=['GET'])
-def api_run_validate_topics(panels_file_path, num_partitions):
-    success, message = run_validate_topics(panels_file_path, num_partitions)
+@app.route('/kafka/topics/validate/<int:num_partitions>', methods=['GET'])
+def api_run_validate_topics(num_partitions):
+    success, message = run_validate_topics(num_partitions)
     return jsonify({"success": success, "message": message})
 
 @app.route('/kafka/clear', methods=['DELETE'])
@@ -1695,6 +1696,21 @@ def api_push_panels_to_redis():
 @app.route('/migration/create/ts-collections', methods=['POST'])
 def api_create_time_series_collections():
     success, message = create_time_series_collections()
+    return jsonify({"success": success, "message": message})
+
+@app.route('/migration/start/producer', methods=['POST'])
+def api_start_producer():
+    success, message = start_producer_processes()
+    return jsonify({"success": success, "message": message})
+
+@app.route('/migration/start/consumer', methods=['POST'])
+def api_start_consumer():
+    success, message = start_consumer_processes()
+    return jsonify({"success": success, "message": message})
+
+@app.route('/migration/start/kill-consumer', methods=['POST'])
+def api_start_kill_consumer():
+    success, message = start_kill_consumer_processes()
     return jsonify({"success": success, "message": message})
 
 if __name__ == '__main__':
