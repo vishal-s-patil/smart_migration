@@ -1025,7 +1025,7 @@ def pre_migration_check(*args, **kwargs) -> tuple[bool, str]:
     except Exception as e:
         return False, f"Pre-migration check failed: {str(e)}"
 
-def start_producer_processes() -> tuple[bool, str]:
+def start_producer_processes(*args, **kwargs) -> tuple[bool, str]:
     """
     Starts producer process and verifies its status.
     
@@ -1065,7 +1065,7 @@ def start_producer_processes() -> tuple[bool, str]:
     except Exception as e:
         return False, f"Failed to start producer process: {str(e)}"
 
-def start_consumer_processes() -> tuple[bool, str]:
+def start_consumer_processes(*args, **kwargs) -> tuple[bool, str]:
     """
     Starts consumer process and verifies its status.
     
@@ -1105,7 +1105,7 @@ def start_consumer_processes() -> tuple[bool, str]:
     except Exception as e:
         return False, f"Failed to start consumer process: {str(e)}"
 
-def start_kill_consumer_processes() -> tuple[bool, str]:
+def start_kill_consumer_processes(*args, **kwargs) -> tuple[bool, str]:
     """
     Starts kill consumer process and verifies its status.
     
@@ -1147,7 +1147,7 @@ def start_kill_consumer_processes() -> tuple[bool, str]:
     except Exception as e:
         return False, f"Failed to start kill consumer process: {str(e)}"
 
-def start_migration_processes() -> tuple[bool, str]:
+def start_migration_processes(*args, **kwargs) -> tuple[bool, str]:
     """
     Starts migration processes and verifies their status:
     Also can be used to add more processes or clients to the migration
@@ -1204,7 +1204,7 @@ def start_migration_processes() -> tuple[bool, str]:
     except Exception as e:
         return False, f"Failed to start migration processes: {str(e)}"
 
-def check_migration_concurrency() -> tuple[bool, str]:
+def check_migration_concurrency(*args, **kwargs) -> tuple[bool, str]:
     """
     Checks the concurrency of the migration by counting running processes:
     1. run_producer.py
