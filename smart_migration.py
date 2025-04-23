@@ -515,7 +515,7 @@ def run_create_topics(*args, **kwargs):
     """
     try:
         result = subprocess.run(
-            ['python3', (BASE_DIR + '/create_topics.py'), PANELS_FILE_PATH, str(NUM_PARTITIONS), '>', TOPIC_CREATION_LOG],
+            ['python3', 'create_topics.py', PANELS_FILE_PATH, str(NUM_PARTITIONS), '>', TOPIC_CREATION_LOG],
             capture_output=True,
             text=True
         )
@@ -1343,8 +1343,8 @@ tools = [
     Tool.from_function(func=check_kafka_status, name="check_kafka_status", description="Checks the status of the Kafka server."),
     Tool.from_function(func=delete_all_kafka_topics, name="delete_all_kafka_topics", description="Deletes all Kafka topics."),
     Tool.from_function(func=delete_specific_kafka_topic, name="delete_specific_kafka_topic", description="Deletes a specific Kafka topic."),
-    Tool.from_function(func=run_create_topics, name="run_create_topics", description="Runs the create_topics.py script to create Kafka topics. this function takes only one argument which is the number of partitions for the topics."),
-    Tool.from_function(func=run_validate_topics, name="run_validate_topics", description="Runs the validate_topics.py script to validate Kafka topics. this function takes only one argument which is the number of partitions for the topics."),
+    Tool.from_function(func=run_create_topics, name="run_create_topics", description="Runs the create_topics.py script to create Kafka topics."),
+    Tool.from_function(func=run_validate_topics, name="run_validate_topics", description="Runs the validate_topics.py script to validate Kafka topics."),
     Tool.from_function(func=clear_kafka_directories, name="clear_kafka_directories", description="Clears Kafka and Zookeeper data directories by stopping the services, removing all files from the data directories, and restarting the services."),
     Tool.from_function(func=start_zookeeper, name="start_zookeeper", description="Starts the Zookeeper service."),
     Tool.from_function(func=stop_zookeeper, name="stop_zookeeper", description="Stops the Zookeeper service."),
@@ -1594,14 +1594,14 @@ def api_delete_specific_kafka_topic(topic_name):
     success, message = delete_specific_kafka_topic(topic_name)
     return jsonify({"success": success, "message": message})
 
-@app.route('/kafka/topics/create/<int:num_partitions>', methods=['POST'])
-def api_run_create_topics(num_partitions):
-    success, message = run_create_topics(num_partitions)
+@app.route('/kafka/topics/create', methods=['POST'])
+def api_run_create_topics():
+    success, message = run_create_topics()
     return jsonify({"success": success, "message": message})
 
-@app.route('/kafka/topics/validate/<int:num_partitions>', methods=['GET'])
-def api_run_validate_topics(num_partitions):
-    success, message = run_validate_topics(num_partitions)
+@app.route('/kafka/topics/validate', methods=['GET'])
+def api_run_validate_topics():
+    success, message = run_validate_topics()
     return jsonify({"success": success, "message": message})
 
 @app.route('/kafka/clear', methods=['DELETE'])
