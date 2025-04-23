@@ -1222,7 +1222,7 @@ def check_migration_concurrency(*args, **kwargs) -> tuple[bool, str]:
             capture_output=True,
             text=True
         )
-        producer_count = len(result.stdout.splitlines()) - 1  # Subtract grep process
+        producer_count = len(result.stdout.splitlines())  # Subtract grep process
         
         # Check consumer processes
         result = subprocess.run(
@@ -1230,7 +1230,7 @@ def check_migration_concurrency(*args, **kwargs) -> tuple[bool, str]:
             capture_output=True,
             text=True
         )
-        consumer_count = len(result.stdout.splitlines()) - 1  # Subtract grep process
+        consumer_count = len(result.stdout.splitlines())  # Subtract grep process
         
         if producer_count == consumer_count:
             return True, f"Currently migration concurrency is {producer_count}"
