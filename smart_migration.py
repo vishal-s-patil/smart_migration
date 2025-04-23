@@ -429,7 +429,7 @@ def check_kafka_status(*args, **kwargs):
             "status": status,
             "is_active": status == "active",
             "is_inactive": status == "inactive",
-            "is_failed": status == "failed"
+            "is_not_running": status == "failed"
         }
     except Exception as e:
         return False, f"Failed to check Kafka status: {str(e)}"
