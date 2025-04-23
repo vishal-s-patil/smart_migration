@@ -34,6 +34,7 @@ VALIDATION_OF_NON_EXISTANCE_OF_DBS_LOG = BASE_DIR + "/logs/validation_of_non_exi
 RUN_PRODUCER_LOG = BASE_DIR + "/logs/run_producer.log"
 RUN_CONSUMER_LOG = BASE_DIR + "/logs/run_consumer.log"
 KILL_CONSUMER_LOG = BASE_DIR + "/logs/kill_consumer.log"
+NUM_PARTITIONS = 10
 
 llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash-001", google_api_key=os.getenv("GOOGLE_API_KEY"))
 
@@ -495,7 +496,7 @@ def delete_specific_kafka_topic(topic_name, *args, **kwargs):
     except Exception as e:
         return False, f"Failed to delete topic '{topic_name}': {str(e)}"
 
-def run_create_topics(num_partitions, *args, **kwargs):
+def run_create_topics(*args, **kwargs):
     """
     Runs the create_topics.py script to create Kafka topics.
     And then verifies from the log file that the topics were created successfully.
@@ -513,10 +514,8 @@ def run_create_topics(num_partitions, *args, **kwargs):
             - message: Status message describing the result
     """
     try:
-        command = ['python3', 'create_topics.py', PANELS_FILE_PATH, str(num_partitions), '>', TOPIC_CREATION_LOG]
-        print(command)
         result = subprocess.run(
-            ['python3', 'create_topics.py', PANELS_FILE_PATH, str(num_partitions), '>', TOPIC_CREATION_LOG],
+            ['python3', (BASE_DIR + '/create_topics.py'), PANELS_FILE_PATH, str(NUM_PARTITIONS), '>', TOPIC_CREATION_LOG],
             capture_output=True,
             text=True
         )
@@ -531,7 +530,7 @@ def run_create_topics(num_partitions, *args, **kwargs):
     except Exception as e:
         return False, f"Error running create_topics.py: {str(e)}"
 
-def run_validate_topics(num_partitions, *args, **kwargs):
+def run_validate_topics(*args, **kwargs):
     """
     Runs the validate_topics.py script to validate Kafka topics.
     And then verifies from the log file that the topics were created successfully.
@@ -550,7 +549,7 @@ def run_validate_topics(num_partitions, *args, **kwargs):
     """
     try:
         result = subprocess.run(
-            ['python3', 'validate_topics.py', PANELS_FILE_PATH, str(num_partitions), '>', TOPIC_VALIDATION_LOG],
+            ['python3', 'validate_topics.py', PANELS_FILE_PATH, str(NUM_PARTITIONS), '>', TOPIC_VALIDATION_LOG],
             capture_output=True,
             text=True
         )
