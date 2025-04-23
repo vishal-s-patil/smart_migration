@@ -291,7 +291,6 @@ def check_redis_status(*args, **kwargs):
                               capture_output=True, 
                               text=True)
         status = result.stdout.strip()
-        print(status)
         return True, {"status": status}
     except Exception as e:
         return False, f"Failed to check Redis status: {str(e)}"
@@ -514,6 +513,8 @@ def run_create_topics(num_partitions, *args, **kwargs):
             - message: Status message describing the result
     """
     try:
+        command = ['python3', 'create_topics.py', PANELS_FILE_PATH, str(num_partitions), '>', TOPIC_CREATION_LOG]
+        print(command)
         result = subprocess.run(
             ['python3', 'create_topics.py', PANELS_FILE_PATH, str(num_partitions), '>', TOPIC_CREATION_LOG],
             capture_output=True,
@@ -595,20 +596,17 @@ def clear_kafka_directories(*args, **kwargs):
         zookeeper_dir = '/data/zookeeper'
         
         # Remove all files including hidden ones
-        subprocess.run(['sudo', 'rm', '-rf', f'{kafka_logs_dir}/*', f'{kafka_logs_dir}/*'], check=True)
-        subprocess.run(['sudo', 'rm', '-rf', f'{zookeeper_dir}/*', f'{zookeeper_dir}/*'], check=True)
+        subprocess.run(['sudo', 'rm', '-rf', f'{kafka_logs_dir}/*', f'{kafka_logs_dir}/.*'], check=True)
+        subprocess.run(['sudo', 'rm', '-rf', f'{zookeeper_dir}/*', f'{zookeeper_dir}/.*'], check=True)
         
-        print(f"Kafka logs dir: {kafka_logs_dir}, Zookeeper dir: {zookeeper_dir}")
         # Start services
         kafka_start_success, kafka_start_msg = start_kafka()
         zookeeper_start_success, zookeeper_start_msg = start_zookeeper()
 
-        print(f"Kafka start success: {kafka_start_success}, Kafka start msg: {kafka_start_msg}")
-
+        
         if not kafka_start_success or not zookeeper_start_success:
             return False, f"Failed to start services: Kafka - {kafka_start_msg}, Zookeeper - {zookeeper_start_msg}"
 
-        print(f"Zookeeper start success: {zookeeper_start_success}, Zookeeper start msg: {zookeeper_start_msg}")
         return True, "Successfully cleared Kafka and Zookeeper directories and restarted services"
         
     except subprocess.CalledProcessError as e:
