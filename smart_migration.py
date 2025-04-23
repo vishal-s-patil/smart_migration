@@ -502,33 +502,30 @@ def run_create_topics(*args, **kwargs):
     And then verifies from the log file that the topics were created successfully.
     verifies that the log file does not contain any errors. by doing a grep -i "err"
 
-    Args:
-        panels_file_path (str): Path to the panels file
-        num_partitions (int): Number of partitions for each topic
-        *args: Variable length argument list
-        **kwargs: Arbitrary keyword arguments
-    
     Returns:
         tuple: (success: bool, message: str)
-            - success: True if script ran successfully, False otherwise
-            - message: Status message describing the result
     """
     try:
-        command = ['python3', 'create_topics.py', PANELS_FILE_PATH, str(NUM_PARTITIONS), '>', TOPIC_CREATION_LOG]
+        command = ['python3', 'create_topics.py', PANELS_FILE_PATH, str(NUM_PARTITIONS)]
         print(command)
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True
-        )
         
+        with open(TOPIC_CREATION_LOG, 'w') as log_file:
+            result = subprocess.run(
+                command,
+                stdout=log_file,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+        
+        if result.returncode != 0:
+            return False, f"Failed to create topics: {result.stderr}"
+            
+        # Check log file for error messages
         with open(TOPIC_CREATION_LOG, 'r') as f:
             if 'err' in f.read().lower():
                 return False, "Errors found in the log file"
         
-        if result.returncode == 0:
-            return True, "Topics created successfully"
-        return False, f"Failed to create topics: {result.stderr}"
+        return True, "Topics created successfully"
     except Exception as e:
         return False, f"Error running create_topics.py: {str(e)}"
 
@@ -538,32 +535,29 @@ def run_validate_topics(*args, **kwargs):
     And then verifies from the log file that the topics were created successfully.
     verifies that the log file does not contain any errors. by doing a grep -i "err"
     
-    Args:
-        panels_file_path (str): Path to the panels file
-        num_partitions (int): Expected number of partitions for each topic
-        *args: Variable length argument list
-        **kwargs: Arbitrary keyword arguments
-    
     Returns:
         tuple: (success: bool, message: str)
-            - success: True if validation successful, False otherwise
-            - message: Status message describing the result
     """
     try:
-        result = subprocess.run(
-            ['python3', 'validate_topics.py', PANELS_FILE_PATH, str(NUM_PARTITIONS), '>', TOPIC_VALIDATION_LOG],
-            capture_output=True,
-            text=True
-        )
+        command = ['python3', 'validate_topics.py', PANELS_FILE_PATH, str(NUM_PARTITIONS)]
         
-        # Verify that the log file does not contain any errors. by doing a grep -i "err"
+        with open(TOPIC_VALIDATION_LOG, 'w') as log_file:
+            result = subprocess.run(
+                command,
+                stdout=log_file,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+        
+        if result.returncode != 0:
+            return False, f"Failed to validate topics: {result.stderr}"
+            
+        # Check log file for error messages
         with open(TOPIC_VALIDATION_LOG, 'r') as f:
             if 'err' in f.read().lower():
                 return False, "Errors found in the log file"
         
-        if result.returncode == 0:
-            return True, "Topics validated successfully"
-        return False, f"Validation failed: {result.stderr}"
+        return True, "Topics validated successfully"
     except Exception as e:
         return False, f"Error running validate_topics.py: {str(e)}"
 
@@ -991,12 +985,12 @@ def pre_migration_check(*args, **kwargs) -> tuple[bool, str]:
             return False, f"Failed to clear Kafka directories: {message}"
             
         # Create topics
-        success, message = run_create_topics(os.path.join(BASE_DIR, 'panels.txt'), 1)
+        success, message = run_create_topics()
         if not success:
             return False, f"Failed to create Kafka topics: {message}"
             
         # Validate topics
-        success, message = run_validate_topics(os.path.join(BASE_DIR, 'panels.txt'), 1)
+        success, message = run_validate_topics()
         if not success:
             return False, f"Failed to validate Kafka topics: {message}"
             
