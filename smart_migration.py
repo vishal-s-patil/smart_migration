@@ -1,0 +1,1588 @@
+from flask import Flask, jsonify, request
+import redis
+import subprocess
+import os
+import re
+from dotenv import load_dotenv
+from langchain.agents import create_react_agent, AgentExecutor
+from langchain import hub
+from langchain.tools import Tool
+from langchain_google_genai import ChatGoogleGenerativeAI
+from kafka.admin import KafkaAdminClient
+from health_check_module import health_check
+import shutil
+from datetime import datetime
+import time
+import json
+from urllib.request import Request, urlopen
+from urllib.error import URLError, HTTPError
+
+load_dotenv()
+
+app = Flask(__name__)
+# BASE_DIR = "/home/mongodb/migration_orchestration"
+BASE_DIR = "/home/vishalpatil/workdir/mongo5-to-mongo7-migration/smart_migration"
+PROPERTY_FILE = "/etc/mongoremodel.properties"
+BASE_MIGRATION_LOG_DIR = "/var/log/apps/mongodataremodel"
+TOPIC_CREATION_LOG = BASE_DIR + "/logs/create_topics.log"
+TOPIC_VALIDATION_LOG = BASE_DIR + "/logs/validate_topics.log"
+TS_COLLECTION_VALIDATION_LOG = BASE_DIR + "/logs/ts_index_validation.log"
+TS_DB_CREATION_LOG = BASE_DIR + "/logs/ts_db_creation.log"
+TS_DB_CREATION_LOG = BASE_DIR + "/logs/ts_db_creation.log"
+VALIDATION_OF_NON_EXISTANCE_OF_DBS_LOG = BASE_DIR + "/logs/validation_of_non_existence_of_dbs.log"
+
+llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash-001", google_api_key=os.getenv("GOOGLE_API_KEY"))
+
+config_dict = {}
+
+def read_property_file() -> tuple[bool, dict]:
+    """
+    Reads the property file and returns its contents as a dictionary.
+    
+    Returns:
+        tuple: (success: bool, result: dict)
+            - success: True if file was read successfully, False otherwise
+            - result: Dictionary containing property file contents or error message
+    """
+    try:
+        global config_dict
+        config_dict = {}
+
+        with open(PROPERTY_FILE, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#'):
+                    if '=' in line:
+                        key, value = line.split('=', 1)
+                        config_dict[key.strip()] = value.strip()
+        return True, config_dict
+    except Exception as e:
+        return False, f"Failed to read property file: {str(e)}"
+
+read_property_file()
+redis_client = redis.Redis(host=config_dict['redis_uri'], port=config_dict['redis_port'], db=0)
+
+def start_redis(*args, **kwargs):
+    """
+    Starts the Redis server using systemctl.
+    
+    Args:
+        *args: Variable length argument list
+        **kwargs: Arbitrary keyword arguments
+    
+    Returns:
+        tuple: (success: bool, message: str)
+            - success: True if Redis started successfully, False otherwise
+            - message: Status message describing the result
+    """
+    try:
+        subprocess.run(['systemctl', 'start', 'redis'])
+        return True, "Redis server started successfully"
+    except Exception as e:
+        return False, f"Failed to start Redis: {str(e)}"
+
+def stop_redis(*args, **kwargs):
+    """
+    Stops the Redis server using systemctl.
+    
+    Args:
+        *args: Variable length argument list
+        **kwargs: Arbitrary keyword arguments
+    
+    Returns:
+        tuple: (success: bool, message: str)
+            - success: True if Redis stopped successfully, False otherwise
+            - message: Status message describing the result
+    """
+    try:
+        subprocess.run(['systemctl', 'stop', 'redis'])
+        return True, "Redis server stopped successfully"
+    except Exception as e:
+        return False, f"Failed to stop Redis: {str(e)}"
+
+def delete_keys_by_pattern(pattern, *args, **kwargs):
+    """
+    Deletes all Redis keys matching the given pattern.
+    
+    Args:
+        pattern (str): Pattern to match keys against (e.g., "producer*")
+        *args: Variable length argument list
+        **kwargs: Arbitrary keyword arguments
+    
+    Returns:
+        tuple: (success: bool, message: str)
+            - success: True if keys were deleted successfully, False otherwise
+            - message: Status message describing the result
+    """
+    try:
+        keys = redis_client.keys(pattern)
+        if keys:
+            redis_client.delete(*keys)
+        return True, f"Deleted keys matching pattern: {pattern}"
+    except Exception as e:
+        return False, f"Failed to delete keys: {str(e)}"
+
+def delete_producer_keys(*args, **kwargs):
+    """
+    Deletes all Redis keys starting with 'producer'.
+    
+    Args:
+        *args: Variable length argument list
+        **kwargs: Arbitrary keyword arguments
+    
+    Returns:
+        tuple: (success: bool, message: str)
+            - success: True if keys were deleted successfully, False otherwise
+            - message: Status message describing the result
+    """
+    return delete_keys_by_pattern("producer*")
+
+def delete_consumer_keys(*args, **kwargs):
+    """
+    Deletes all Redis keys starting with 'consumer'.
+    
+    Args:
+        *args: Variable length argument list
+        **kwargs: Arbitrary keyword arguments
+    
+    Returns:
+        tuple: (success: bool, message: str)
+            - success: True if keys were deleted successfully, False otherwise
+            - message: Status message describing the result
+    """
+    return delete_keys_by_pattern("consumer*")
+
+def delete_all_keys(*args, **kwargs):
+    """
+    Deletes all keys in the current Redis database.
+    
+    Args:
+        *args: Variable length argument list
+        **kwargs: Arbitrary keyword arguments
+    
+    Returns:
+        tuple: (success: bool, message: str)
+            - success: True if all keys were deleted successfully, False otherwise
+            - message: Status message describing the result
+    """
+    try:
+        redis_client.flushdb()
+        return True, "All keys deleted successfully"
+    except Exception as e:
+        return False, f"Failed to delete all keys: {str(e)}"
+
+def delete_specific_key(key, *args, **kwargs):
+    """
+    Deletes a specific key from Redis.
+    
+    Args:
+        key (str): The key to delete
+        *args: Variable length argument list
+        **kwargs: Arbitrary keyword arguments
+    
+    Returns:
+        tuple: (success: bool, message: str)
+            - success: True if key was deleted successfully, False otherwise
+            - message: Status message describing the result
+    """
+    try:
+        if redis_client.delete(key):
+            return True, f"Key '{key}' deleted successfully"
+        return False, f"Key '{key}' not found"
+    except Exception as e:
+        return False, f"Failed to delete key: {str(e)}"
+
+def get_panel_count(*args, **kwargs):
+    """
+    Gets the count of panels (keys starting with 'read' and 'write').
+    
+    Args:
+        *args: Variable length argument list
+        **kwargs: Arbitrary keyword arguments
+    
+    Returns:
+        tuple: (success: bool, result: dict)
+            - success: True if operation was successful, False otherwise
+            - result: Dictionary containing read_panels, write_panels, and total_panels counts
+    """
+    try:
+        read_keys = len(redis_client.keys("read*"))
+        write_keys = len(redis_client.keys("write*"))
+        return True, {
+            "read_panels": read_keys,
+            "write_panels": write_keys,
+            "total_panels": read_keys + write_keys
+        }
+    except Exception as e:
+        return False, f"Failed to get panel count: {str(e)}"
+
+def get_total_keys(*args, **kwargs):
+    """
+    Gets the total number of keys in Redis.
+    
+    Args:
+        *args: Variable length argument list
+        **kwargs: Arbitrary keyword arguments
+    
+    Returns:
+        tuple: (success: bool, result: dict)
+            - success: True if operation was successful, False otherwise
+            - result: Dictionary containing total_keys count
+    """
+    try:
+        total_keys = len(redis_client.keys("*"))
+        return True, {"total_keys": total_keys}
+    except Exception as e:
+        return False, f"Failed to get total keys: {str(e)}"
+
+def get_panels_length(*args, **kwargs):
+    """
+    Gets the length of all queues starting with 'read' and 'write'.
+    
+    Args:
+        *args: Variable length argument list
+        **kwargs: Arbitrary keyword arguments
+    
+    Returns:
+        tuple: (success: bool, result: dict)
+            - success: True if operation was successful, False otherwise
+            - result: Dictionary containing read_queues and write_queues with their lengths
+    """
+    try:
+        # Get all keys starting with read and write
+        read_keys = [key.decode() for key in redis_client.keys("read*")]
+        write_keys = [key.decode() for key in redis_client.keys("write*")]
+        
+        # Get length of each queue using traditional for loops
+        read_queues = {}
+        for key in read_keys:
+            read_queues[key] = redis_client.llen(key)
+            
+        write_queues = {}
+        for key in write_keys:
+            write_queues[key] = redis_client.llen(key)
+        
+        return True, {
+            "read_queues": read_queues,
+            "write_queues": write_queues
+        }
+    except Exception as e:
+        return False, f"Failed to get queue lengths: {str(e)}"
+
+def check_redis_status(*args, **kwargs):
+    """
+    Checks if Redis server is running.
+    
+    Args:
+        *args: Variable length argument list
+        **kwargs: Arbitrary keyword arguments
+    
+    Returns:
+        tuple: (success: bool, result: dict)
+            - success: True if operation was successful, False otherwise
+            - result: Dictionary containing Redis server status
+    """
+    try:
+        result = subprocess.run(['systemctl', 'is-active', 'redis'], 
+                              capture_output=True, 
+                              text=True)
+        status = result.stdout.strip()
+        print(status)
+        return True, {"status": status}
+    except Exception as e:
+        return False, f"Failed to check Redis status: {str(e)}"
+
+# KAFKA
+def get_kafka_topics_count(*args, **kwargs):
+    """
+    Gets the count of Kafka topics.
+    
+    Args:
+        *args: Variable length argument list
+        **kwargs: Arbitrary keyword arguments
+    
+    Returns:
+        tuple: (success: bool, result: dict)
+            - success: True if operation was successful, False otherwise
+            - result: Dictionary containing topics_count
+    """
+    try:
+        admin_client = KafkaAdminClient(bootstrap_servers=config_dict['kafka_bootstrap_servers'])
+        topics = admin_client.list_topics()
+        admin_client.close()
+        return True, {"topics_count": len(topics)}
+    except Exception as e:
+        return False, f"Failed to get topics count: {str(e)}"
+
+def get_kafka_groups_count(*args, **kwargs):
+    """
+    Gets the count of Kafka consumer groups.
+    
+    Args:
+        *args: Variable length argument list
+        **kwargs: Arbitrary keyword arguments
+    
+    Returns:
+        tuple: (success: bool, result: dict)
+            - success: True if operation was successful, False otherwise
+            - result: Dictionary containing groups_count
+    """
+    try:
+        admin_client = KafkaAdminClient(bootstrap_servers=config_dict['kafka_bootstrap_servers'])
+        groups = admin_client.list_consumer_groups()
+        admin_client.close()
+        return True, {"groups_count": len(groups)}
+    except Exception as e:
+        return False, f"Failed to get groups count: {str(e)}"
+
+def check_topics_groups_match(*args, **kwargs):
+    """
+    Checks if the number of Kafka topics matches the number of consumer groups.
+    
+    Args:
+        *args: Variable length argument list
+        **kwargs: Arbitrary keyword arguments
+    
+    Returns:
+        tuple: (success: bool, result: dict)
+            - success: True if operation was successful, False otherwise
+            - result: Dictionary containing topics_count, groups_count, and match_status
+    """
+    try:
+        admin_client = KafkaAdminClient(bootstrap_servers=config_dict['kafka_bootstrap_servers'])
+        topics = admin_client.list_topics()
+        groups = admin_client.list_consumer_groups()
+        admin_client.close()
+        
+        topics_count = len(topics)
+        groups_count = len(groups)
+        
+        return True, {
+            "topics_count": topics_count,
+            "groups_count": groups_count,
+            "match_status": topics_count == groups_count
+        }
+    except Exception as e:
+        return False, f"Failed to check topics and groups match: {str(e)}"
+
+def start_kafka(*args, **kwargs):
+    """
+    Starts the Kafka service using systemctl.
+    
+    Args:
+        *args: Variable length argument list
+        **kwargs: Arbitrary keyword arguments
+    
+    Returns:
+        tuple: (success: bool, message: str)
+            - success: True if Kafka started successfully, False otherwise
+            - message: Status message describing the result
+    """
+    try:
+        subprocess.run(['systemctl', 'start', 'kafka'], check=True)
+        return True, "Kafka service started successfully"
+    except subprocess.CalledProcessError as e:
+        return False, f"Failed to start Kafka: {str(e)}"
+    except Exception as e:
+        return False, f"An unexpected error occurred while starting Kafka: {str(e)}"
+
+def stop_kafka(*args, **kwargs):
+    """
+    Stops the Kafka service using systemctl.
+    
+    Args:
+        *args: Variable length argument list
+        **kwargs: Arbitrary keyword arguments
+    
+    Returns:
+        tuple: (success: bool, message: str)
+            - success: True if Kafka stopped successfully, False otherwise
+            - message: Status message describing the result
+    """
+    try:
+        subprocess.run(['systemctl', 'stop', 'kafka'], check=True)
+        return True, "Kafka service stopped successfully"
+    except subprocess.CalledProcessError as e:
+        return False, f"Failed to stop Kafka: {str(e)}"
+    except Exception as e:
+        return False, f"An unexpected error occurred while stopping Kafka: {str(e)}"
+
+def check_kafka_status(*args, **kwargs):
+    """
+    Checks the status of the Kafka service using systemctl.
+    
+    Args:
+        *args: Variable length argument list
+        **kwargs: Arbitrary keyword arguments
+    
+    Returns:
+        tuple: (success: bool, result: dict)
+            - success: True if status check was successful, False otherwise
+            - result: Dictionary containing status information
+    """
+    try:
+        result = subprocess.run(['systemctl', 'is-active', 'kafka'], 
+                              capture_output=True, 
+                              text=True)
+        status = result.stdout.strip()
+        return True, {
+            "status": status,
+            "is_active": status == "active",
+            "is_inactive": status == "inactive",
+            "is_failed": status == "failed"
+        }
+    except Exception as e:
+        return False, f"Failed to check Kafka status: {str(e)}"
+
+def delete_all_kafka_topics(*args, **kwargs):
+    """
+    Deletes all Kafka topics.
+    
+    Args:
+        *args: Variable length argument list
+        **kwargs: Arbitrary keyword arguments
+    
+    Returns:
+        tuple: (success: bool, message: str)
+            - success: True if topics were deleted successfully, False otherwise
+            - message: Status message describing the result
+    """
+    try:
+        admin_client = KafkaAdminClient(bootstrap_servers=config_dict['kafka_bootstrap_servers'])
+        topics = admin_client.list_topics()
+        
+        if not topics:
+            admin_client.close()
+            return True, "No topics found to delete"
+            
+        # Delete all topics
+        admin_client.delete_topics(topics)
+        admin_client.close()
+        return True, f"Successfully deleted {len(topics)} topics"
+    except Exception as e:
+        return False, f"Failed to delete topics: {str(e)}"
+
+def delete_specific_kafka_topic(topic_name, *args, **kwargs):
+    """
+    Deletes a specific Kafka topic.
+    
+    Args:
+        topic_name (str): Name of the topic to delete
+        *args: Variable length argument list
+        **kwargs: Arbitrary keyword arguments
+    
+    Returns:
+        tuple: (success: bool, message: str)
+            - success: True if topic was deleted successfully, False otherwise
+            - message: Status message describing the result
+    """
+    try:
+        admin_client = KafkaAdminClient(bootstrap_servers=config_dict['kafka_bootstrap_servers'])
+        
+        # Check if topic exists
+        topics = admin_client.list_topics()
+        if topic_name not in topics:
+            admin_client.close()
+            return False, f"Topic '{topic_name}' does not exist"
+            
+        # Delete the specific topic
+        admin_client.delete_topics([topic_name])
+        admin_client.close()
+        return True, f"Successfully deleted topic '{topic_name}'"
+    except Exception as e:
+        return False, f"Failed to delete topic '{topic_name}': {str(e)}"
+
+def run_create_topics(panels_file_path, num_partitions, *args, **kwargs):
+    """
+    Runs the create_topics.py script to create Kafka topics.
+    And then verifies from the log file that the topics were created successfully.
+    verifies that the log file does not contain any errors. by doing a grep -i "err"
+
+    Args:
+        panels_file_path (str): Path to the panels file
+        num_partitions (int): Number of partitions for each topic
+        *args: Variable length argument list
+        **kwargs: Arbitrary keyword arguments
+    
+    Returns:
+        tuple: (success: bool, message: str)
+            - success: True if script ran successfully, False otherwise
+            - message: Status message describing the result
+    """
+    try:
+        result = subprocess.run(
+            ['python3', 'create_topics.py', panels_file_path, str(num_partitions), '>', TOPIC_CREATION_LOG],
+            capture_output=True,
+            text=True
+        )
+        
+        with open(TOPIC_CREATION_LOG, 'r') as f:
+            if 'err' in f.read().lower():
+                return False, "Errors found in the log file"
+        
+        if result.returncode == 0:
+            return True, "Topics created successfully"
+        return False, f"Failed to create topics: {result.stderr}"
+    except Exception as e:
+        return False, f"Error running create_topics.py: {str(e)}"
+
+def run_validate_topics(panels_file_path, num_partitions, *args, **kwargs):
+    """
+    Runs the validate_topics.py script to validate Kafka topics.
+    And then verifies from the log file that the topics were created successfully.
+    verifies that the log file does not contain any errors. by doing a grep -i "err"
+    
+    Args:
+        panels_file_path (str): Path to the panels file
+        num_partitions (int): Expected number of partitions for each topic
+        *args: Variable length argument list
+        **kwargs: Arbitrary keyword arguments
+    
+    Returns:
+        tuple: (success: bool, message: str)
+            - success: True if validation successful, False otherwise
+            - message: Status message describing the result
+    """
+    try:
+        result = subprocess.run(
+            ['python3', 'validate_topics.py', panels_file_path, str(num_partitions), '>', TOPIC_VALIDATION_LOG],
+            capture_output=True,
+            text=True
+        )
+        
+        # Verify that the log file does not contain any errors. by doing a grep -i "err"
+        with open(TOPIC_VALIDATION_LOG, 'r') as f:
+            if 'err' in f.read().lower():
+                return False, "Errors found in the log file"
+        
+        if result.returncode == 0:
+            return True, "Topics validated successfully"
+        return False, f"Validation failed: {result.stderr}"
+    except Exception as e:
+        return False, f"Error running validate_topics.py: {str(e)}"
+
+def clear_kafka_directories(*args, **kwargs):
+    """
+    Clears Kafka and Zookeeper data directories by:
+    1. Stopping Kafka and Zookeeper services
+    2. Removing all files from data directories
+    3. Starting Kafka and Zookeeper services
+    
+    Args:
+        *args: Variable length argument list
+        **kwargs: Arbitrary keyword arguments
+    
+    Returns:
+        tuple: (success: bool, message: str)
+            - success: True if operation was successful, False otherwise
+            - message: Status message describing the result
+    """
+    try:
+        # Stop services
+        kafka_stop_success, kafka_stop_msg = stop_kafka()
+        zookeeper_stop_success, zookeeper_stop_msg = stop_zookeeper()
+        
+        if not kafka_stop_success or not zookeeper_stop_success:
+            return False, f"Failed to stop services: Kafka - {kafka_stop_msg}, Zookeeper - {zookeeper_stop_msg}"
+        
+        # Clear directories
+        kafka_logs_dir = '/data/kafka-logs'
+        zookeeper_dir = '/data/zookeeper'
+        
+        # Remove all files including hidden ones
+        subprocess.run(['rm', '-rf', f'{kafka_logs_dir}/*', f'{kafka_logs_dir}/.*'], check=True)
+        subprocess.run(['rm', '-rf', f'{zookeeper_dir}/*', f'{zookeeper_dir}/.*'], check=True)
+        
+        # Start services
+        kafka_start_success, kafka_start_msg = start_kafka()
+        zookeeper_start_success, zookeeper_start_msg = start_zookeeper()
+        
+        if not kafka_start_success or not zookeeper_start_success:
+            return False, f"Failed to start services: Kafka - {kafka_start_msg}, Zookeeper - {zookeeper_start_msg}"
+        
+        return True, "Successfully cleared Kafka and Zookeeper directories and restarted services"
+        
+    except subprocess.CalledProcessError as e:
+        return False, f"Failed to clear directories: {str(e)}"
+    except Exception as e:
+        return False, f"An unexpected error occurred: {str(e)}"
+
+def start_zookeeper(*args, **kwargs):
+    """
+    Starts the Zookeeper service using systemctl.
+    
+    Args:
+        *args: Variable length argument list
+        **kwargs: Arbitrary keyword arguments
+    
+    Returns:
+        tuple: (success: bool, message: str)
+            - success: True if Zookeeper started successfully, False otherwise
+            - message: Status message describing the result
+    """
+    try:
+        subprocess.run(['systemctl', 'start', 'zookeeper'], check=True)
+        return True, "Zookeeper service started successfully"
+    except subprocess.CalledProcessError as e:
+        return False, f"Failed to start Zookeeper: {str(e)}"
+    except Exception as e:
+        return False, f"An unexpected error occurred while starting Zookeeper: {str(e)}"
+
+def stop_zookeeper(*args, **kwargs):
+    """
+    Stops the Zookeeper service using systemctl.
+    
+    Args:
+        *args: Variable length argument list
+        **kwargs: Arbitrary keyword arguments
+    
+    Returns:
+        tuple: (success: bool, message: str)
+            - success: True if Zookeeper stopped successfully, False otherwise
+            - message: Status message describing the result
+    """
+    try:
+        subprocess.run(['systemctl', 'stop', 'zookeeper'], check=True)
+        return True, "Zookeeper service stopped successfully"
+    except subprocess.CalledProcessError as e:
+        return False, f"Failed to stop Zookeeper: {str(e)}"
+    except Exception as e:
+        return False, f"An unexpected error occurred while stopping Zookeeper: {str(e)}"
+
+# LLM 
+def identify_panels(text: str, llm: ChatGoogleGenerativeAI) -> list[str]:
+    """
+    Identifies and returns panels from the given text.
+    Panels can be comma-separated or line-separated.
+    Uses the provided LLM to extract and refine the panel list.
+
+    Args:
+        text: The input text containing potential panel information.
+        llm: An initialized Langchain ChatGoogleGenerativeAI model.
+
+    Returns:
+        A list of identified panel names.
+    """
+    try:
+        prompt = f"""You are an expert in identifying distinct panels from text.
+        Given the following text, identify all the individual panel names.
+        Panels can be separated by commas or appear on separate lines.
+
+        Text:
+        \"{text}\"
+
+        Return the identified panels as a comma-separated list."""
+
+        response = llm.invoke(prompt)
+        extracted_panels_str = response.content
+
+        # Split the extracted string by comma and then strip whitespace
+        panels = [panel.strip() for panel in extracted_panels_str.split(',')]
+
+        # Further refine by splitting by newline in case the LLM included them
+        refined_panels = []
+        for panel in panels:
+            refined_panels.extend([p.strip() for p in panel.split('\n') if p.strip()])
+
+        # Remove any empty strings that might have resulted from splitting
+        return [panel for panel in refined_panels if panel]
+
+    except Exception as e:
+        print(f"An error occurred during panel identification: {e}")
+        return []
+
+# OTHER HELPER FUNCTIONS
+def create_panels_file(text: list, *args, **kwargs) -> tuple[bool, str]:
+    """
+    Extracts panels from the given text and creates a panels.txt file with one panel per line.
+    
+    Args:
+        text (str): Text containing panel information
+        *args: Variable length argument list
+        **kwargs: Arbitrary keyword arguments
+    
+    Returns:
+        tuple: (success: bool, message: str)
+            - success: True if file was created successfully, False otherwise
+            - message: Status message describing the result
+    """
+    try:
+        if not isinstance(text, str):
+            return False, "Input must be a string"
+
+        panels = identify_panels(text, llm)
+
+        panels_file_path = os.path.join(BASE_DIR, 'panels.txt')
+        
+        with open(panels_file_path, 'w') as f:
+            for panel in panels:
+                if not isinstance(panel, str):
+                    return False, f"Invalid panel format: {panel}"
+                f.write(f"{panel}\n")
+                
+        return True, f"Successfully created panels file at {panels_file_path}"
+    except Exception as e:
+        return False, f"Failed to create panels file: {str(e)}"
+
+def get_panels_file_length(*args, **kwargs) -> tuple[bool, dict]:
+    """
+    Gets the number of panels in the panels.txt file.
+    
+    Args:
+        *args: Variable length argument list
+        **kwargs: Arbitrary keyword arguments
+    
+    Returns:
+        tuple: (success: bool, result: dict)
+            - success: True if operation was successful, False otherwise
+            - result: Dictionary containing panels_count and file_path
+    """
+    try:
+        panels_file_path = os.path.join(BASE_DIR, 'panels.txt')
+        
+        if not os.path.exists(panels_file_path):
+            return False, "Panels file does not exist"
+            
+        with open(panels_file_path, 'r') as f:
+            panels = [line.strip() for line in f if line.strip()]
+            
+        return True, {
+            "panels_count": len(panels),
+            "file_path": panels_file_path
+        }
+    except Exception as e:
+        return False, f"Failed to get panels count: {str(e)}"
+
+def delete_panels_file(*args, **kwargs) -> tuple[bool, str]:
+    """
+    Deletes the panels.txt file from the BASE_DIR.
+    
+    Args:
+        *args: Variable length argument list
+        **kwargs: Arbitrary keyword arguments
+    
+    Returns:
+        tuple: (success: bool, message: str)
+            - success: True if file was deleted successfully, False otherwise
+            - message: Status message describing the result
+    """
+    try:
+        panels_file_path = os.path.join(BASE_DIR, 'panels.txt')
+        
+        if not os.path.exists(panels_file_path):
+            return False, "Panels file does not exist"
+            
+        os.remove(panels_file_path)
+        return True, "Successfully deleted panels file"
+    except Exception as e:
+        return False, f"Failed to delete panels file: {str(e)}"
+
+def clean_migration_logs() -> tuple[bool, str]:
+    """
+    Cleans the migration logs directory by:
+    1. Creating a backup folder with current timestamp
+    2. Moving all files (not folders) to the backup folder
+    
+    Returns:
+        tuple: (success: bool, message: str)
+            - success: True if operation was successful, False otherwise
+            - message: Status message describing the result
+    """
+    try:
+        # Create backup directory with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_dir = os.path.join(BASE_MIGRATION_LOG_DIR, f"migration_logs_bkp_{timestamp}")
+        
+        # Create backup directory if it doesn't exist
+        os.makedirs(backup_dir, exist_ok=True)
+        
+        # Move all files (not directories) to backup directory
+        for item in os.listdir(BASE_MIGRATION_LOG_DIR):
+            item_path = os.path.join(BASE_MIGRATION_LOG_DIR, item)
+            if os.path.isfile(item_path):
+                shutil.move(item_path, os.path.join(backup_dir, item))
+                
+        return True, f"Successfully backed up logs to {backup_dir}"
+    except Exception as e:
+        return False, f"Failed to clean migration logs: {str(e)}"
+
+def check_migration_processes(*args, **kwargs) -> tuple[bool, dict]:
+    """
+    Checks if any migration processes are running by checking for:
+    1. run_producer
+    2. run_consumer
+    3. kill_consumer
+    4. java write process
+    5. java read process
+    
+    Returns:
+        tuple: (success: bool, result: dict)
+            - success: True if check was successful, False otherwise
+            - result: Dictionary containing process status or error message
+    """
+    try:
+        processes = {
+            'run_producer': False,
+            'run_consumer': False,
+            'kill_consumer': False,
+            'java_write': False,
+            'java_read': False
+        }
+        
+        # Check for each process
+        for process in ['run_producer', 'run_consumer', 'kill_consumer']:
+            result = subprocess.run(
+                ['ps', '-eaf', '|', 'grep', process],
+                capture_output=True,
+                text=True
+            )
+            # If grep finds itself and the process, count > 1
+            processes[process] = len(result.stdout.splitlines()) > 1
+            
+        # Check for java write process
+        result = subprocess.run(
+            ['ps', '-eaf', '|', 'grep', 'java', '|', 'grep', 'write'],
+            capture_output=True,
+            text=True
+        )
+        processes['java_write'] = len(result.stdout.splitlines()) > 1
+        
+        # Check for java read process
+        result = subprocess.run(
+            ['ps', '-eaf', '|', 'grep', 'java', '|', 'grep', 'read'],
+            capture_output=True,
+            text=True
+        )
+        processes['java_read'] = len(result.stdout.splitlines()) > 1
+            
+        return True, processes
+    except Exception as e:
+        return False, f"Failed to check migration processes: {str(e)}"
+
+def kill_migration_processes() -> tuple[bool, str]:
+    """
+    Kills any running migration processes:
+    1. run_producer
+    2. run_consumer
+    3. kill_consumer
+    
+    Returns:
+        tuple: (success: bool, message: str)
+            - success: True if processes were killed successfully, False otherwise
+            - message: Status message describing the result
+    """
+    try:
+        processes = ['run_producer', 'run_consumer', 'kill_consumer']
+        killed = []
+        
+        for process in processes:
+            # Get process IDs
+            result = subprocess.run(
+                ['ps', '-eaf', '|', 'grep', process],
+                capture_output=True,
+                text=True
+            )
+            
+            # Skip the grep process itself
+            lines = result.stdout.splitlines()
+            for line in lines:
+                if process in line and 'grep' not in line:
+                    pid = line.split()[1]  # Get the PID
+                    subprocess.run(['kill', '-9', pid])
+                    killed.append(f"{process} (PID: {pid})")
+        
+        if killed:
+            return True, f"Successfully killed processes: {', '.join(killed)}"
+        return True, "No migration processes were running"
+    except Exception as e:
+        return False, f"Failed to kill migration processes: {str(e)}"
+
+def push_panels_to_redis() -> tuple[bool, str]:
+    """
+    Pushes panels to Redis using push_panels_to_redis.py script
+    and verifies the output log for errors.
+    
+    Returns:
+        tuple: (success: bool, message: str)
+            - success: True if panels were pushed successfully, False otherwise
+            - message: Status message describing the result
+    """
+    try:
+        result = subprocess.run(
+            ['python3', os.path.join(BASE_DIR, 'push_panels_to_redis.py'),
+             os.path.join(BASE_DIR, 'panels.txt'),
+             os.path.join(BASE_DIR, 'logs/push.log'), '1'],
+            capture_output=True,
+            text=True
+        )
+        
+        # Check for errors in the output
+        if result.returncode != 0:
+            return False, f"Failed to push panels to Redis: {result.stderr}"
+            
+        # Check log file for error messages and get the latest info line
+        latest_info_line = None
+        with open(os.path.join(BASE_DIR, 'logs/push.log'), 'r') as f:
+            for line in f.readlines():
+                if 'panels to redis' in line.lower() and 'info' in line.lower():
+                    latest_info_line = line.strip()
+        
+        if latest_info_line:
+            pushed = latest_info_line.split('pushed')[1].strip()
+            pushed_cnt = int(pushed.split(' ')[0])
+            success, total_result = get_panels_file_length()
+            if not success:
+                return False, f"Failed to get total panels count: {total_result}"
+            total_cnt = total_result['panels_count']
+            
+            if pushed_cnt == total_cnt:
+                return True, f"Successfully pushed {pushed_cnt} panels to Redis"
+            else:
+                return False, f"Failed to push {total_cnt-pushed_cnt} panels to Redis and successfully pushed {pushed_cnt} panels"
+        else:
+            return False, "No panel push information found in log file"
+    except Exception as e:
+        return False, f"Failed to push panels to Redis: {str(e)}"
+
+def pre_migration_check() -> tuple[bool, str]:
+    """
+    Performs pre-migration checks and preparation for migration:
+    1. Health check
+    2. Redis cleanup and verification
+    3. Kafka cleanup, topic creation and validation
+    4. Log folder cleanup
+    5. Time series collections validation
+    6. Push panels to Redis
+    7. Check for running migration processes
+    8. Final health check
+    
+    Returns:
+        tuple: (success: bool, message: str)
+            - success: True if all checks passed, False otherwise
+            - message: Status message describing the result
+    """
+    try:
+        # 1. Initial health check
+        if not health_check(PROPERTY_FILE):
+            return False, "Health check failed, please check"
+            
+        # 2. Redis cleanup and verification
+        success, message = delete_all_keys()
+        if not success:
+            return False, f"Failed to clear Redis: {message}"
+            
+        success, result = get_total_keys()
+        if not success:
+            return False, f"Failed to verify Redis keys: {result}"
+        if result['total_keys'] != 0:
+            return False, "Redis keys not cleared properly"
+            
+        # 3. Kafka cleanup and topic setup
+        success, message = clear_kafka_directories()
+        if not success:
+            return False, f"Failed to clear Kafka directories: {message}"
+            
+        # Create topics
+        success, message = run_create_topics(os.path.join(BASE_DIR, 'panels.txt'), 1)
+        if not success:
+            return False, f"Failed to create Kafka topics: {message}"
+            
+        # Validate topics
+        success, message = run_validate_topics(os.path.join(BASE_DIR, 'panels.txt'), 1)
+        if not success:
+            return False, f"Failed to validate Kafka topics: {message}"
+            
+        # 4. Clean log folder
+        success, message = clean_migration_logs()
+        if not success:
+            return False, f"Failed to clean log folder: {message}"
+            
+        # 5. Verify time series collections
+        success, message = validate_time_series_collections()
+        if not success:
+            return False, f"Failed to validate time series collections: {message}"
+            
+        # 6. Push panels to Redis
+        success, message = push_panels_to_redis()
+        if not success:
+            return False, f"Failed to push panels to Redis: {message}"
+            
+        # 7. Check for running migration processes
+        success, result = check_migration_processes()
+        if not success:
+            return False, f"Failed to check migration processes: {result}"
+            
+        for process, running in result.items():
+            if running:
+                return False, f"Migration process {process} is still running"
+                
+        # 8. Final health check
+        if not health_check(PROPERTY_FILE):
+            return False, "Final health check failed, please check"
+            
+        return True, "All pre-migration checks passed successfully"
+    except Exception as e:
+        return False, f"Pre-migration check failed: {str(e)}"
+
+def start_migration_processes(process_count: int = 1) -> tuple[bool, str]:
+    """
+    Starts migration processes and verifies their status:
+    Also can be used to add more processes or clients to the migration
+    1. run_producer.py
+    2. run_consumer.py
+    3. kill_consumer.py
+    
+    Args:
+        process_count (int): Number of concurrent processes to start (default: 1)
+    
+    Returns:
+        tuple: (success: bool, message: str)
+            - success: True if all processes started successfully, False otherwise
+            - message: Status message describing the result
+    """
+    try:
+        processes = [
+            {
+                'script': 'run_producer.py',
+                'log': 'run_producer.log',
+                'args': []
+            },
+            {
+                'script': 'run_consumer.py',
+                'log': 'run_consumer.log',
+                'args': []
+            },
+            {
+                'script': 'kill_consumer.py',
+                'log': 'kill_consumer.log',
+                'args': [os.path.join(BASE_DIR, 'panels.txt')]
+            }
+        ]
+        
+        # Start processes
+        for process in processes:
+            for i in range(process_count):
+                cmd = [
+                    'python3',
+                    os.path.join(BASE_DIR, process['script']),
+                    os.path.join(BASE_DIR, 'logs', process['log'])
+                ] + process['args']
+                
+                # Start process in background
+                subprocess.Popen(cmd)
+        
+        # Wait for 2 seconds
+        time.sleep(2)
+        
+        # Verify processes are running
+        for process in processes:
+            result = subprocess.run(
+                ['ps', '-eaf', '|', 'grep', process['script']],
+                capture_output=True,
+                text=True
+            )
+            
+            # Count should be process_count + 1 (for grep itself)
+            if len(result.stdout.splitlines()) != process_count + 1:
+                return False, f"Process {process['script']} is not running properly"
+
+        # combine the resilt of ps -eaf | grep run_producer.py, run_consumer.py, kill_consumer.py and return it                 
+        result = subprocess.run(
+            ['ps', '-eaf', '|', 'grep', 'run_producer.py', '|', 'grep', 'run_consumer.py', '|', 'grep', 'kill_consumer.py'],
+            capture_output=True,
+            text=True
+        )
+        return True, "successfully started migration processes\n" + result.stdout
+    except Exception as e:
+        return False, f"Failed to start migration processes: {str(e)}"
+
+def check_migration_concurrency() -> tuple[bool, str]:
+    """
+    Checks the concurrency of the migration by counting running processes:
+    1. run_producer.py
+    2. run_consumer.py
+    
+    Returns:
+        tuple: (success: bool, result: str)
+            - success: True if check was successful, False otherwise
+            - result: Message describing the concurrency status or error message
+    """
+    try:
+        # Check producer processes
+        result = subprocess.run(
+            ['ps', '-eaf', '|', 'grep', 'run_producer.py'],
+            capture_output=True,
+            text=True
+        )
+        producer_count = len(result.stdout.splitlines()) - 1  # Subtract grep process
+        
+        # Check consumer processes
+        result = subprocess.run(
+            ['ps', '-eaf', '|', 'grep', 'run_consumer.py'],
+            capture_output=True,
+            text=True
+        )
+        consumer_count = len(result.stdout.splitlines()) - 1  # Subtract grep process
+        
+        if producer_count == consumer_count:
+            return True, f"Currently migration concurrency is {producer_count}"
+        else:
+            return False, f"Concurrency mismatch: {producer_count} producers and {consumer_count} consumers running"
+    except Exception as e:
+        return False, f"Failed to check migration concurrency: {str(e)}"
+
+def validate_time_series_collections() -> tuple[bool, str]:
+    """
+    Validates time series indexes by running ts_mongo_ind_index_validation.py
+    and checks the output log for errors.
+    
+    Returns:
+        tuple: (success: bool, message: str)
+            - success: True if validation passed without errors, False otherwise
+            - message: Status message describing the result
+    """
+    try:
+        # Run the validation script and redirect output to log file
+        result = subprocess.run(
+            ['python3', os.path.join(BASE_DIR, 'ts_mongo_ind_index_validation.py'), '>', TS_COLLECTION_VALIDATION_LOG],
+            capture_output=True,
+            text=True
+        )
+        
+        # Write output to log file
+        with open(TS_COLLECTION_VALIDATION_LOG, 'w') as f:
+            f.write(result.stdout)
+            if result.stderr:
+                f.write("\nErrors:\n" + result.stderr)
+        
+        # Check for errors in the output
+        if result.returncode != 0:
+            return False, f"Validation script failed with return code {result.returncode}"
+            
+        # Check log file for error messages
+        with open(TS_COLLECTION_VALIDATION_LOG, 'r') as f:
+            log_content = f.read().lower()
+            if 'error' in log_content or 'err' in log_content:
+                return False, "Errors found in time series index validation log"
+                
+        return True, "Time series indexes validated successfully"
+    except Exception as e:
+        return False, f"Failed to validate time series indexes: {str(e)}"
+
+def create_time_series_collections() -> tuple[bool, str]:
+    """
+    Creates time series collections by running create_timeseries_dbs.py script
+    and verifies the output log for errors.
+    
+    Returns:
+        tuple: (success: bool, message: str)
+            - success: True if collections were created successfully, False otherwise
+            - message: Status message describing the result
+    """
+    try:
+        # Run the script with panels.txt as input and redirect output to log file
+        result = subprocess.run(
+            ['python3', 'create_timeseries_dbs.py',
+             os.path.join(BASE_DIR, 'panels.txt')],
+             '>',
+             TS_DB_CREATION_LOG,
+            capture_output=True,
+            text=True
+        )
+        
+        # Write output to log file
+        with open(TS_DB_CREATION_LOG, 'w') as f:
+            f.write(result.stdout)
+            if result.stderr:
+                f.write("\nErrors:\n" + result.stderr)
+        
+        # Check for errors in the output
+        if result.returncode != 0:
+            return False, f"Failed to create time series collections: {result.stderr}"
+            
+        # Check log file for error messages
+        with open(TS_DB_CREATION_LOG, 'r') as f:
+            log_content = f.read().lower()
+            if 'error' in log_content or 'err' in log_content:
+                return False, "Errors found in time series collection creation log"
+                
+        return True, "Time series collections created successfully"
+    except Exception as e:
+        return False, f"Failed to create time series collections: {str(e)}"
+
+tools = [
+    Tool.from_function(func=start_redis, name="start_redis", description="Starts the Redis server."),
+    Tool.from_function(func=stop_redis, name="stop_redis", description="Stops the Redis server."),
+    Tool.from_function(func=delete_keys_by_pattern, name="delete_keys_by_pattern", description="Deletes Redis keys matching a given pattern."),
+    Tool.from_function(func=delete_producer_keys, name="delete_producer_keys", description="Deletes all Redis producer keys."),
+    Tool.from_function(func=delete_consumer_keys, name="delete_consumer_keys", description="Deletes all Redis consumer keys."),
+    Tool.from_function(func=delete_all_keys, name="delete_all_keys", description="Deletes all keys in Redis."),
+    Tool.from_function(func=delete_specific_key, name="delete_specific_key", description="Deletes a specific Redis key."),
+    Tool.from_function(func=get_panel_count, name="get_panel_count", description="Gets the current count of panels in Redis."),
+    Tool.from_function(func=get_total_keys, name="get_total_keys", description="Gets the total number of keys in Redis."),
+    Tool.from_function(func=get_panels_length, name="get_panels_length", description="Gets the length of the panels list in Redis."),
+    Tool.from_function(func=check_redis_status, name="check_redis_status", description="Checks the status of the Redis server."),
+    Tool.from_function(func=get_kafka_topics_count, name="get_kafka_topics_count", description="Gets the count of Kafka topics."),
+    Tool.from_function(func=get_kafka_groups_count, name="get_kafka_groups_count", description="Gets the count of Kafka consumer groups."),
+    Tool.from_function(func=check_topics_groups_match, name="check_topics_groups_match", description="Checks if the number of Kafka topics matches the number of consumer groups."),
+    Tool.from_function(func=start_kafka, name="start_kafka", description="Starts the Kafka server."),
+    Tool.from_function(func=stop_kafka, name="stop_kafka", description="Stops the Kafka server."),
+    Tool.from_function(func=check_kafka_status, name="check_kafka_status", description="Checks the status of the Kafka server."),
+    Tool.from_function(func=delete_all_kafka_topics, name="delete_all_kafka_topics", description="Deletes all Kafka topics."),
+    Tool.from_function(func=delete_specific_kafka_topic, name="delete_specific_kafka_topic", description="Deletes a specific Kafka topic."),
+    Tool.from_function(func=run_create_topics, name="run_create_topics", description="Runs the create_topics.py script to create Kafka topics."),
+    Tool.from_function(func=run_validate_topics, name="run_validate_topics", description="Runs the validate_topics.py script to validate Kafka topics."),
+    Tool.from_function(func=clear_kafka_directories, name="clear_kafka_directories", description="Clears Kafka and Zookeeper data directories by stopping the services, removing all files from the data directories, and restarting the services."),
+    Tool.from_function(func=start_zookeeper, name="start_zookeeper", description="Starts the Zookeeper service."),
+    Tool.from_function(func=stop_zookeeper, name="stop_zookeeper", description="Stops the Zookeeper service."),
+    Tool.from_function(func=create_panels_file, name="create_panels_file", description="Creates a panels.txt file with one panel per line."),
+    Tool.from_function(func=get_panels_file_length, name="get_panels_file_length", description="Gets the number of panels in the panels.txt file."),
+    Tool.from_function(func=delete_panels_file, name="delete_panels_file", description="Deletes the panels.txt file from the BASE_DIR."),
+    Tool.from_function(func=clean_migration_logs, name="clean_migration_logs", description="Cleans the migration logs directory by backing up existing files to a timestamped directory."),
+    Tool.from_function(func=check_migration_processes, name="check_migration_processes", description="Checks if any migration processes are running by checking for: 1. run_producer 2. run_consumer 3. kill_consumer 4. java write process 5. java read process"),
+    Tool.from_function(func=kill_migration_processes, name="kill_migration_processes", description="Kills any running migration processes: 1. run_producer 2. run_consumer 3. kill_consumer"),
+    Tool.from_function(func=pre_migration_check, name="pre_migration_check", description="Performs pre-migration checks and preparation for migration: 1. Health check 2. Redis cleanup and verification 3. Kafka cleanup, topic creation and validation 4. Log folder cleanup 5. Time series collections validation 6. Push panels to Redis 7. Check for running migration processes 8. Final health check"),
+    Tool.from_function(func=start_migration_processes, name="start_migration_processes", description="Starts migration processes and verifies their status and can be used to add more processes or clients to the migration: 1. run_producer.py 2. run_consumer.py 3. kill_consumer.py"),
+    Tool.from_function(func=check_migration_concurrency, name="check_migration_concurrency", description="Checks the concurrency of the migration by counting running processes: 1. run_producer.py 2. run_consumer.py"),
+    Tool.from_function(func=validate_time_series_collections, name="validate_time_series_collections", description="Validates time series indexes by running ts_mongo_ind_index_validation.py and checks the output log for errors."),
+    Tool.from_function(func=create_time_series_collections, name="create_time_series_collections", description="Creates time series collections by running create_timeseries_dbs.py script and verifies the output log for errors."),
+]
+    
+prompt = hub.pull("hwchase17/react")
+agent = create_react_agent(llm, tools, prompt)
+agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+
+def process_smart_query(query):
+    """
+    Processes a query using the Claude-3 agent.
+    
+    Args:
+        query (str): The query to process
+    
+    Returns:
+        tuple: (success: bool, result: str)
+            - success: True if operation was successful, False otherwise
+            - result: Response from the agent or error message
+    """
+    try:
+        user_query = query
+        output = agent_executor.invoke({"input": user_query})
+        return True, output['output']
+    except Exception as e:
+        return False, f"Failed to process query: {str(e)}"
+
+# API Endpoints
+@app.route('/')
+def home():
+    return jsonify({
+        "message": "Welcome to the Redis Management API",
+        "status": "success"
+    })
+
+# REDIS
+@app.route('/redis/start', methods=['POST'])
+def api_start_redis():
+    success, message = start_redis()
+    return jsonify({"success": success, "message": message})
+
+@app.route('/redis/stop', methods=['POST'])
+def api_stop_redis():
+    success, message = stop_redis()
+    return jsonify({"success": success, "message": message})
+
+@app.route('/redis/delete/producer', methods=['DELETE'])
+def api_delete_producer_keys():
+    success, message = delete_producer_keys()
+    return jsonify({"success": success, "message": message})
+
+@app.route('/redis/delete/consumer', methods=['DELETE'])
+def api_delete_consumer_keys():
+    success, message = delete_consumer_keys()
+    return jsonify({"success": success, "message": message})
+
+@app.route('/redis/delete/all', methods=['DELETE'])
+def api_delete_all_keys():
+    success, message = delete_all_keys()
+    return jsonify({"success": success, "message": message})
+
+@app.route('/redis/delete/<key>', methods=['DELETE'])
+def api_delete_specific_key(key):
+    success, message = delete_specific_key(key)
+    return jsonify({"success": success, "message": message})
+
+@app.route('/redis/methods/count', methods=['GET'])
+def api_get_panel_count():
+    success, result = get_panel_count()
+    if success:
+        return jsonify({"success": True, "data": result})
+    return jsonify({"success": False, "message": result})
+
+@app.route('/redis/keys/count', methods=['GET'])
+def api_get_total_keys():
+    success, result = get_total_keys()
+    if success:
+        return jsonify({"success": True, "data": result})
+    return jsonify({"success": False, "message": result})
+
+@app.route('/redis/remaining/panels', methods=['GET'])
+def api_get_panels_length():
+    success, result = get_panels_length()
+    if success:
+        return jsonify({"success": True, "data": result})
+    return jsonify({"success": False, "message": result})
+
+@app.route('/redis/status', methods=['GET'])
+def api_check_redis_status():
+    success, result = check_redis_status()
+    if success:
+        return jsonify({"success": True, "data": result})
+    return jsonify({"success": False, "message": result})
+
+# SLACK 
+def message_slack(message):
+    """
+    Sends a message to the Slack channel using the Slack API.
+    """
+    print(f"Inside message_slack function")
+    #curl -X POST -H 'Content-type: application/json' --data '{"text":"Hi saurabh?!"}' https://hooks.slack.com/services/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
+    slack_url = "https://hooks.slack.com/services/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"
+    message = json.dumps({"text": message}).encode('utf-8')
+    req = Request(slack_url, data=message, method='POST')
+    req.add_header('Content-Type', 'application/json')  # Set the Content-Type header
+    print(f"Headers Added")
+    try:
+        with urlopen(req) as response:
+            status_code = response.status
+            data = response.read().decode('utf-8')
+            print(f"Successfully received response from Slack: {data}")
+            return {
+                'statusCode': status_code,
+                'body': data
+            }
+    except HTTPError as e:
+        print(f"HTTP Error calling Flask service: {e.code} {e.reason}")
+        return {
+            'statusCode': e.code,
+            'body': f"HTTP Error: {e.code} {e.reason}"
+        }
+    except URLError as e:
+        print(f"URL Error calling Flask service: {e.reason}")
+        return {
+            'statusCode': 500,
+            'body': f"URL Error: {e.reason}"
+        }
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+        return {
+            'statusCode': 500,
+            'body': f"Unexpected Error: {e}"
+        }
+
+# SMART MIGRATION 
+@app.route('/', methods=['POST'])
+def api_smart_query():
+    """
+    Processes a query using the Claude-3 agent.
+    
+    Request Body:
+        {
+            "body": "slack json content"
+        }
+    
+    Returns:
+        JSON response with the agent's response or error message
+    """
+    try:
+        event = request.get_json()
+        body = json.loads(event['body'])
+        print(event['body'], type(event['body']))
+    
+    except Exception as e:
+        message_slack(f"Invalid request body: {e}")
+        return jsonify({
+            "success": False,
+            "message": "Invalid request body"
+        }), 400
+    
+    try:
+        query = re.sub(r'<[^>]*>', '', body['event']['text'])
+    except Exception as e:
+        message_slack(f"Invalid request body: {e}")
+        return jsonify({
+            "success": False,
+            "message": "Invalid request body"
+        }), 400
+
+    success, result = process_smart_query(query)
+    
+    message_slack(result)
+
+    if success:
+        return jsonify({
+            "success": True,
+            "data": result
+        })
+    else:
+        return jsonify({
+            "success": False,
+            "message": result
+        })
+
+# KAFKA
+@app.route('/kafka/topics/count', methods=['GET'])
+def api_get_kafka_topics_count():
+    success, result = get_kafka_topics_count()
+    if success:
+        return jsonify({"success": True, "data": result})
+    return jsonify({"success": False, "message": result})
+
+@app.route('/kafka/groups/count', methods=['GET'])
+def api_get_kafka_groups_count():
+    success, result = get_kafka_groups_count()
+    if success:
+        return jsonify({"success": True, "data": result})
+    return jsonify({"success": False, "message": result})
+
+@app.route('/kafka/topics-groups/match', methods=['GET'])
+def api_check_topics_groups_match():
+    success, result = check_topics_groups_match()
+    if success:
+        return jsonify({"success": True, "data": result})
+    return jsonify({"success": False, "message": result})
+
+@app.route('/kafka/start', methods=['POST'])
+def api_start_kafka():
+    success, message = start_kafka()
+    return jsonify({"success": success, "message": message})
+
+@app.route('/kafka/stop', methods=['POST'])
+def api_stop_kafka():
+    success, message = stop_kafka()
+    return jsonify({"success": success, "message": message})
+
+@app.route('/kafka/status', methods=['GET'])
+def api_check_kafka_status():
+    success, result = check_kafka_status()
+    if success:
+        return jsonify({"success": True, "data": result})
+    return jsonify({"success": False, "message": result})
+
+@app.route('/kafka/topics/delete/all', methods=['DELETE'])
+def api_delete_all_kafka_topics():
+    success, message = delete_all_kafka_topics()
+    return jsonify({"success": success, "message": message})
+
+@app.route('/kafka/topics/delete/<topic_name>', methods=['DELETE'])
+def api_delete_specific_kafka_topic(topic_name):
+    success, message = delete_specific_kafka_topic(topic_name)
+    return jsonify({"success": success, "message": message})
+
+@app.route('/kafka/topics/create/<path:panels_file_path>/<int:num_partitions>', methods=['POST'])
+def api_run_create_topics(panels_file_path, num_partitions):
+    success, message = run_create_topics(panels_file_path, num_partitions)
+    return jsonify({"success": success, "message": message})
+
+@app.route('/kafka/topics/validate/<path:panels_file_path>/<int:num_partitions>', methods=['GET'])
+def api_run_validate_topics(panels_file_path, num_partitions):
+    success, message = run_validate_topics(panels_file_path, num_partitions)
+    return jsonify({"success": success, "message": message})
+
+@app.route('/kafka/clear', methods=['DELETE'])
+def api_clear_kafka_directories():
+    success, message = clear_kafka_directories()
+    return jsonify({"success": success, "message": message})
+
+@app.route('/zookeeper/start', methods=['POST'])
+def api_start_zookeeper():
+    success, message = start_zookeeper()
+    return jsonify({"success": success, "message": message})
+
+@app.route('/zookeeper/stop', methods=['POST'])
+def api_stop_zookeeper():
+    success, message = stop_zookeeper()
+    return jsonify({"success": success, "message": message})
+
+@app.route('/config/read', methods=['GET'])
+def api_read_property_file():
+    success, result = read_property_file()
+    if success:
+        return jsonify({"success": True, "data": result})
+    return jsonify({"success": False, "message": result})
+
+@app.route('/panels/count', methods=['GET'])
+def api_get_panels_file_length():
+    success, result = get_panels_file_length()
+    if success:
+        return jsonify({"success": True, "data": result})
+    return jsonify({"success": False, "message": result})
+
+@app.route('/panels/delete', methods=['DELETE'])
+def api_delete_panels_file():
+    success, message = delete_panels_file()
+    return jsonify({"success": success, "message": message})
+
+@app.route('/logs/clean', methods=['POST'])
+def api_clean_migration_logs():
+    success, message = clean_migration_logs()
+    return jsonify({"success": success, "message": message})
+
+@app.route('/migration/processes/status', methods=['GET'])
+def api_check_migration_processes():
+    success, result = check_migration_processes()
+    if success:
+        return jsonify({"success": True, "data": result})
+    return jsonify({"success": False, "message": result})
+
+@app.route('/migration/processes/kill', methods=['POST'])
+def api_kill_migration_processes():
+    success, message = kill_migration_processes()
+    return jsonify({"success": success, "message": message})
+
+@app.route('/migration/precheck', methods=['POST'])
+def api_pre_migration_check():
+    success, message = pre_migration_check()
+    return jsonify({"success": success, "message": message})
+
+@app.route('/migration/start', methods=['POST'])
+def api_start_migration():
+    if not request.json or 'process_count' not in request.json:
+        return jsonify({
+            "success": False,
+            "message": "process_count is required in request body"
+        }), 400
+        
+    process_count = request.json['process_count']
+    if not isinstance(process_count, int) or process_count < 1:
+        return jsonify({
+            "success": False,
+            "message": "process_count must be a positive integer"
+        }), 400
+        
+    success, message = start_migration_processes(process_count)
+    return jsonify({"success": success, "message": message})
+
+@app.route('/migration/concurrency', methods=['GET'])
+def api_check_migration_concurrency():
+    success, result = check_migration_concurrency()
+    if success:
+        return jsonify({"success": True, "data": result})
+    return jsonify({"success": False, "message": result})
+
+@app.route('/migration/validate/ts-indexes', methods=['POST'])
+def api_validate_time_series_collections():
+    success, message = validate_time_series_collections()
+    return jsonify({"success": success, "message": message})
+
+@app.route('/migration/push-panels', methods=['POST'])
+def api_push_panels_to_redis():
+    success, message = push_panels_to_redis()
+    return jsonify({"success": success, "message": message})
+
+@app.route('/migration/create/ts-collections', methods=['POST'])
+def api_create_time_series_collections():
+    success, message = create_time_series_collections()
+    return jsonify({"success": success, "message": message})
+
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=9001)
+    
