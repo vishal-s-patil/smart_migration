@@ -30,6 +30,9 @@ TS_COLLECTION_VALIDATION_LOG = BASE_DIR + "/logs/ts_index_validation.log"
 TS_DB_CREATION_LOG = BASE_DIR + "/logs/ts_db_creation.log"
 TS_DB_CREATION_LOG = BASE_DIR + "/logs/ts_db_creation.log"
 VALIDATION_OF_NON_EXISTANCE_OF_DBS_LOG = BASE_DIR + "/logs/validation_of_non_existence_of_dbs.log"
+RUN_PRODUCER_LOG = BASE_DIR + "/logs/run_producer.log"
+RUN_CONSUMER_LOG = BASE_DIR + "/logs/run_consumer.log"
+KILL_CONSUMER_LOG = BASE_DIR + "/logs/kill_consumer.log"
 
 llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash-001", google_api_key=os.getenv("GOOGLE_API_KEY"))
 
@@ -897,7 +900,7 @@ def kill_migration_processes() -> tuple[bool, str]:
     except Exception as e:
         return False, f"Failed to kill migration processes: {str(e)}"
 
-def push_panels_to_redis() -> tuple[bool, str]:
+def push_panels_info_to_redis(*args, **kwargs) -> tuple[bool, str]:
     """
     Pushes panels to Redis using push_panels_to_redis.py script
     and verifies the output log for errors.
@@ -944,7 +947,7 @@ def push_panels_to_redis() -> tuple[bool, str]:
     except Exception as e:
         return False, f"Failed to push panels to Redis: {str(e)}"
 
-def pre_migration_check() -> tuple[bool, str]:
+def pre_migration_check(*args, **kwargs) -> tuple[bool, str]:
     """
     Performs pre-migration checks and preparation for migration:
     1. Health check
@@ -1003,7 +1006,7 @@ def pre_migration_check() -> tuple[bool, str]:
             return False, f"Failed to validate time series collections: {message}"
             
         # 6. Push panels to Redis
-        success, message = push_panels_to_redis()
+        success, message = push_panels_info_to_redis()
         if not success:
             return False, f"Failed to push panels to Redis: {message}"
             
@@ -1024,7 +1027,129 @@ def pre_migration_check() -> tuple[bool, str]:
     except Exception as e:
         return False, f"Pre-migration check failed: {str(e)}"
 
-def start_migration_processes(process_count: int = 1) -> tuple[bool, str]:
+def start_producer_processes() -> tuple[bool, str]:
+    """
+    Starts producer process and verifies its status.
+    
+    Args:
+        log_file (str): Path to the log file
+    
+    Returns:
+        tuple: (success: bool, message: str)
+    """
+    try:
+        script = 'run_producer.py'
+        cmd = [
+            'python3',
+            os.path.join(BASE_DIR, script),
+            os.path.join(BASE_DIR, 'logs', RUN_PRODUCER_LOG)
+        ]
+        subprocess.Popen(cmd)
+        
+        time.sleep(2)  # Give process time to start
+        
+        # Check process status
+        result = subprocess.run(
+            f'ps -eaf | grep {script}',
+            shell=True,
+            capture_output=True,
+            text=True
+        )
+        
+        # Count actual processes (excluding grep itself)
+        process_lines = [line for line in result.stdout.splitlines() if script in line and 'grep' not in line]
+        
+        if len(process_lines) == 1:
+            return True, "Successfully started producer process\n" + result.stdout
+        else:
+            return False, f"Expected 1 producer process but found {len(process_lines)}"
+            
+    except Exception as e:
+        return False, f"Failed to start producer process: {str(e)}"
+
+def start_consumer_processes() -> tuple[bool, str]:
+    """
+    Starts consumer process and verifies its status.
+    
+    Args:
+        log_file (str): Path to the log file
+    
+    Returns:
+        tuple: (success: bool, message: str)
+    """
+    try:
+        script = 'run_consumer.py'
+        cmd = [
+            'python3',
+            os.path.join(BASE_DIR, script),
+            os.path.join(BASE_DIR, 'logs', RUN_CONSUMER_LOG)
+        ]
+        subprocess.Popen(cmd)
+        
+        time.sleep(2)  # Give process time to start
+        
+        # Check process status
+        result = subprocess.run(
+            f'ps -eaf | grep {script}',
+            shell=True,
+            capture_output=True,
+            text=True
+        )
+        
+        # Count actual processes (excluding grep itself)
+        process_lines = [line for line in result.stdout.splitlines() if script in line and 'grep' not in line]
+        
+        if len(process_lines) == 1:
+            return True, "Successfully started consumer process\n" + result.stdout
+        else:
+            return False, f"Expected 1 consumer process but found {len(process_lines)}"
+            
+    except Exception as e:
+        return False, f"Failed to start consumer process: {str(e)}"
+
+def start_kill_consumer_processes() -> tuple[bool, str]:
+    """
+    Starts kill consumer process and verifies its status.
+    
+    Args:
+        log_file (str): Path to the log file
+    
+    Returns:
+        tuple: (success: bool, message: str)
+    """
+    try:
+        script = 'kill_consumer.py'
+        cmd = [
+            'python3',
+            os.path.join(BASE_DIR, script),
+            os.path.join(BASE_DIR, 'panels.txt'),
+            os.path.join(BASE_DIR, 'logs', KILL_CONSUMER_LOG),
+            config_dict['env']
+        ]
+        subprocess.Popen(cmd)
+        
+        time.sleep(2)  # Give process time to start
+        
+        # Check process status
+        result = subprocess.run(
+            f'ps -eaf | grep {script}',
+            shell=True,
+            capture_output=True,
+            text=True
+        )
+        
+        # Count actual processes (excluding grep itself)
+        process_lines = [line for line in result.stdout.splitlines() if script in line and 'grep' not in line]
+        
+        if len(process_lines) == 1:
+            return True, "Successfully started kill consumer process\n" + result.stdout
+        else:
+            return False, f"Expected 1 kill consumer process but found {len(process_lines)}"
+            
+    except Exception as e:
+        return False, f"Failed to start kill consumer process: {str(e)}"
+
+def start_migration_processes() -> tuple[bool, str]:
     """
     Starts migration processes and verifies their status:
     Also can be used to add more processes or clients to the migration
@@ -1032,67 +1157,52 @@ def start_migration_processes(process_count: int = 1) -> tuple[bool, str]:
     2. run_consumer.py
     3. kill_consumer.py
     
-    Args:
-        process_count (int): Number of concurrent processes to start (default: 1)
-    
     Returns:
         tuple: (success: bool, message: str)
             - success: True if all processes started successfully, False otherwise
             - message: Status message describing the result
     """
     try:
-        processes = [
-            {
-                'script': 'run_producer.py',
-                'log': 'run_producer.log',
-                'args': []
-            },
-            {
-                'script': 'run_consumer.py',
-                'log': 'run_consumer.log',
-                'args': []
-            },
-            {
-                'script': 'kill_consumer.py',
-                'log': 'kill_consumer.log',
-                'args': [os.path.join(BASE_DIR, 'panels.txt')]
-            }
-        ]
+        # Start producer process
+        success, message = start_producer_processes()
+        if not success:
+            return False, message
+            
+        # Start consumer process
+        success, message = start_consumer_processes()
+        if not success:
+            return False, message
+            
+        # Start kill consumer process
+        success, message = start_kill_consumer_processes()
+        if not success:
+            return False, message
+            
+        # Get final process status by checking each process separately
+        processes = {
+            'run_producer.py': False,
+            'run_consumer.py': False,
+            'kill_consumer.py': False
+        }
         
-        # Start processes
-        for process in processes:
-            for i in range(process_count):
-                cmd = [
-                    'python3',
-                    os.path.join(BASE_DIR, process['script']),
-                    os.path.join(BASE_DIR, 'logs', process['log'])
-                ] + process['args']
-                
-                # Start process in background
-                subprocess.Popen(cmd)
-        
-        # Wait for 2 seconds
-        time.sleep(2)
-        
-        # Verify processes are running
-        for process in processes:
+        return_result = ""
+        for script in processes.keys():
             result = subprocess.run(
-                ['ps', '-eaf', '|', 'grep', process['script']],
+                f'ps -eaf | grep {script}',
+                shell=True,
                 capture_output=True,
                 text=True
             )
+            process_lines = [line for line in result.stdout.splitlines() if script in line and 'grep' not in line]
+            processes[script] = len(process_lines) == 1
+            return_result += result.stdout
+        all_running = all(processes.values())
+        if all_running:
+            return True, "Successfully started all migration processes\n" + return_result
+        else:
+            not_running = [script for script, running in processes.items() if not running]
+            return False, f"Failed to start processes: {', '.join(not_running)}"
             
-            # Count should be process_count + 1 (for grep itself)
-            if len(result.stdout.splitlines()) != process_count + 1:
-                return False, f"Process {process['script']} is not running properly"
-
-        # combine the resilt of ps -eaf | grep run_producer.py, run_consumer.py, kill_consumer.py and return it                 
-        result = subprocess.run(
-            ['ps', '-eaf', '|', 'grep', 'run_producer.py', '|', 'grep', 'run_consumer.py', '|', 'grep', 'kill_consumer.py'],
-            capture_output=True,
-            text=True
-        )
-        return True, "successfully started migration processes\n" + result.stdout
     except Exception as e:
         return False, f"Failed to start migration processes: {str(e)}"
 
@@ -1246,6 +1356,10 @@ tools = [
     Tool.from_function(func=check_migration_concurrency, name="check_migration_concurrency", description="Checks the concurrency of the migration by counting running processes: 1. run_producer.py 2. run_consumer.py"),
     Tool.from_function(func=validate_time_series_collections, name="validate_time_series_collections", description="Validates time series indexes by running ts_mongo_ind_index_validation.py and checks the output log for errors."),
     Tool.from_function(func=create_time_series_collections, name="create_time_series_collections", description="Creates time series collections by running create_timeseries_dbs.py script and verifies the output log for errors."),
+    Tool.from_function(func=start_producer_processes, name="start_producer_processes", description="Starts the run_producer.py script which start the producer processes for all methods."),
+    Tool.from_function(func=start_consumer_processes, name="start_consumer_processes", description="Starts the run_consumer.py script which start the consumer processes for all methods."),
+    Tool.from_function(func=start_kill_consumer_processes, name="start_kill_consumer_processes", description="Starts the kill_consumer.py script which kills the consumer processes if the migration is completed for the respective method."),
+    Tool.from_function(func=push_panels_info_to_redis, name="push_panels_info_to_redis", description="Pushes the panels info to Redis."),
 ]
     
 prompt = hub.pull("hwchase17/react")
@@ -1558,7 +1672,7 @@ def api_start_migration():
             "message": "process_count must be a positive integer"
         }), 400
         
-    success, message = start_migration_processes(process_count)
+    success, message = start_migration_processes()
     return jsonify({"success": success, "message": message})
 
 @app.route('/migration/concurrency', methods=['GET'])
@@ -1575,7 +1689,7 @@ def api_validate_time_series_collections():
 
 @app.route('/migration/push-panels', methods=['POST'])
 def api_push_panels_to_redis():
-    success, message = push_panels_to_redis()
+    success, message = push_panels_info_to_redis()
     return jsonify({"success": success, "message": message})
 
 @app.route('/migration/create/ts-collections', methods=['POST'])
