@@ -585,6 +585,7 @@ def clear_kafka_directories(*args, **kwargs):
         # Stop services
         kafka_stop_success, kafka_stop_msg = stop_kafka()
         zookeeper_stop_success, zookeeper_stop_msg = stop_zookeeper()
+        print(f"Kafka stop success: {kafka_stop_success}, Kafka stop msg: {kafka_stop_msg}")
         
         if not kafka_stop_success or not zookeeper_stop_success:
             return False, f"Failed to stop services: Kafka - {kafka_stop_msg}, Zookeeper - {zookeeper_stop_msg}"
@@ -597,13 +598,17 @@ def clear_kafka_directories(*args, **kwargs):
         subprocess.run(['rm', '-rf', f'{kafka_logs_dir}/*', f'{kafka_logs_dir}/.*'], check=True)
         subprocess.run(['rm', '-rf', f'{zookeeper_dir}/*', f'{zookeeper_dir}/.*'], check=True)
         
+        print(f"Kafka logs dir: {kafka_logs_dir}, Zookeeper dir: {zookeeper_dir}")
         # Start services
         kafka_start_success, kafka_start_msg = start_kafka()
         zookeeper_start_success, zookeeper_start_msg = start_zookeeper()
-        
+
+        print(f"Kafka start success: {kafka_start_success}, Kafka start msg: {kafka_start_msg}")
+
         if not kafka_start_success or not zookeeper_start_success:
             return False, f"Failed to start services: Kafka - {kafka_start_msg}, Zookeeper - {zookeeper_start_msg}"
-        
+
+        print(f"Zookeeper start success: {zookeeper_start_success}, Zookeeper start msg: {zookeeper_start_msg}")
         return True, "Successfully cleared Kafka and Zookeeper directories and restarted services"
         
     except subprocess.CalledProcessError as e:
