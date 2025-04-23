@@ -514,8 +514,10 @@ def run_create_topics(*args, **kwargs):
             - message: Status message describing the result
     """
     try:
+        command = ['python3', 'create_topics.py', PANELS_FILE_PATH, str(NUM_PARTITIONS), '>', TOPIC_CREATION_LOG]
+        print(command)
         result = subprocess.run(
-            ['python3', 'create_topics.py', PANELS_FILE_PATH, str(NUM_PARTITIONS), '>', TOPIC_CREATION_LOG],
+            command,
             capture_output=True,
             text=True
         )
