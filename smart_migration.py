@@ -1773,6 +1773,7 @@ def message_slack(message):
     print(f"Headers Added")
     try:
         with urlopen(req) as response:
+            print('response', response)
             status_code = response.status
             data = response.read().decode('utf-8')
             print(f"Successfully received response from Slack: {data}")
