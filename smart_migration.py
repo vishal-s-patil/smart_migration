@@ -1530,46 +1530,6 @@ def validate_time_series_collections(*args, **kwargs) -> tuple[bool, str]:
     except Exception as e:
         return False, f"Failed to validate time series indexes: {str(e)}"
 
-def create_time_series_collections(*args, **kwargs) -> tuple[bool, str]:
-    """
-    Creates time series collections by running create_timeseries_dbs.py script
-    and verifies the output log for errors.
-    
-    Returns:
-        tuple: (success: bool, message: str)
-            - success: True if collections were created successfully, False otherwise
-            - message: Status message describing the result
-    """
-    try:
-        # Run the script with panels.txt as input and redirect output to log file
-        result = subprocess.run(
-            ['python3', 'create_timeseries_dbs.py',
-             os.path.join(BASE_DIR, 'panels.txt')],
-             '>',
-             TS_DB_CREATION_LOG,
-            capture_output=True,
-            text=True
-        )
-        
-        # Write output to log file
-        with open(TS_DB_CREATION_LOG, 'w') as f:
-            f.write(result.stdout)
-            if result.stderr:
-                f.write("\nErrors:\n" + result.stderr)
-        
-        # Check for errors in the output
-        if result.returncode != 0:
-            return False, f"Failed to create time series collections: {result.stderr}"
-            
-        # Check log file for error messages
-        with open(TS_DB_CREATION_LOG, 'r') as f:
-            log_content = f.read().lower()
-            if 'error' in log_content or 'err' in log_content:
-                return False, "Errors found in time series collection creation log"
-                
-        return True, "Time series collections created successfully"
-    except Exception as e:
-        return False, f"Failed to create time series collections: {str(e)}"
 
 def run_health_check(*args, **kwargs) -> tuple[bool, str]:
     """
@@ -1673,7 +1633,6 @@ tools = [
     Tool.from_function(func=start_migration_processes, name="start_migration_processes", description="Starts migration processes and verifies their status and can be used to add more processes or clients to the migration: 1. run_producer.py 2. run_consumer.py 3. kill_consumer.py"),
     Tool.from_function(func=check_migration_concurrency, name="check_migration_concurrency", description="Checks the concurrency of the migration by counting running processes: 1. run_producer.py 2. run_consumer.py"),
     Tool.from_function(func=validate_time_series_collections, name="validate_time_series_collections", description="Validates time series indexes by running ts_mongo_ind_index_validation.py and checks the output log for errors.NOTE: This does not create the time series collections, it only validates them."),
-    Tool.from_function(func=create_time_series_collections, name="create_time_series_collections", description="Creates time series collections by running create_timeseries_dbs.py script and verifies the output log for errors."),
     Tool.from_function(func=start_producer_processes, name="start_producer_processes", description="Starts the run_producer.py script which start the producer processes for all methods."),
     Tool.from_function(func=start_consumer_processes, name="start_consumer_processes", description="Starts the run_consumer.py script which start the consumer processes for all methods."),
     Tool.from_function(func=start_kill_consumer_processes, name="start_kill_consumer_processes", description="Starts the kill_consumer.py script which kills the consumer processes if the migration is completed for the respective method."),
@@ -2018,11 +1977,6 @@ def api_validate_time_series_collections():
 @app.route('/migration/push-panels', methods=['POST'])
 def api_push_panels_to_redis():
     success, message = push_panels_info_to_redis()
-    return jsonify({"success": success, "message": message})
-
-@app.route('/migration/create/ts-collections', methods=['POST'])
-def api_create_time_series_collections():
-    success, message = create_time_series_collections()
     return jsonify({"success": success, "message": message})
 
 @app.route('/migration/start/producer', methods=['POST'])
