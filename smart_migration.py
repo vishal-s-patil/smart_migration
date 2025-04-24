@@ -20,12 +20,14 @@ import time
 import json
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
+import inspect
 
 load_dotenv()
 
 app = Flask(__name__)
 # BASE_DIR = "/home/mongodb/migration_orchestration"
 BASE_DIR = "/home/mongodb/smart_migration"
+LOG_PATH = BASE_DIR + "/logs/smart_migration.log"
 PANELS_CID_CSV_FILE_PATH = BASE_DIR + "/panels_cid.csv"
 REDIS_BACKUP_DIR = BASE_DIR + "/redis_backup"
 HEALTH_CHECK_LOG = BASE_DIR + "/logs/health_check.log"
@@ -49,6 +51,33 @@ SLACK_URL = os.getenv("SLACK_URL")
 llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash-001", google_api_key=os.getenv("GOOGLE_API_KEY"))
 
 config_dict = {}
+
+# Add logging configuration
+logging.basicConfig(
+    filename=LOG_PATH,
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] [Function_Name:%(funcName)s] [Action:%(message)s] [Command:%(command)s]',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+
+def log_action(action: str, command: str = "", level: str = "INFO"):
+    """
+    Logs an action with the specified format.
+    
+    Args:
+        action: The action being performed
+        command: The command being executed (if any)
+        level: The log level (INFO, WARNING, ERROR)
+    """
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    log_message = f"{timestamp} [{level}] [Function_Name:{inspect.currentframe().f_back.f_code.co_name}] [Action:{action}] [Command:{command}]"
+    
+    if level == "ERROR":
+        logging.error(log_message)
+    elif level == "WARNING":
+        logging.warning(log_message)
+    else:
+        logging.info(log_message)
 
 def read_property_file(*args, **kwargs) -> tuple[bool, dict]:
     """
@@ -121,21 +150,17 @@ def create_ts_dbs_collections(*args, **kwargs):
 def start_redis(*args, **kwargs):
     """
     Starts the Redis server using systemctl.
-    
-    Args:
-        *args: Variable length argument list
-        **kwargs: Arbitrary keyword arguments
-    
-    Returns:
-        tuple: (success: bool, message: str)
-            - success: True if Redis started successfully, False otherwise
-            - message: Status message describing the result
     """
     try:
-        subprocess.run(['systemctl', 'start', 'redis'])
+        command = ['systemctl', 'start', 'redis']
+        log_action("Starting Redis server", " ".join(command))
+        subprocess.run(command)
+        log_action("Redis server started successfully")
         return True, "Redis server started successfully"
     except Exception as e:
-        return False, f"Failed to start Redis: {str(e)}"
+        error_msg = f"Failed to start Redis: {str(e)}"
+        log_action(error_msg, level="ERROR")
+        return False, error_msg
 
 def stop_redis(*args, **kwargs):
     """
@@ -1760,47 +1785,6 @@ def api_backup_redis():
     return jsonify({"success": success, "message": message})
 
 # SLACK 
-# def message_slack(message):
-#     """
-#     Sends a message to the Slack channel using the Slack API.
-#     """
-#     print(f"Inside message_slack function")
-#     #curl -X POST -H 'Content-type: application/json' --data '{"text":"Hi saurabh?!"}' https://hooks.slack.com/services/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
-#     slack_url = SLACK_URL
-#     message = json.dumps({"text": message}).encode('utf-8')
-#     req = Request(slack_url, data=message, method='POST')
-#     req.add_header('Content-Type', 'application/json')  # Set the Content-Type header
-#     print(f"Headers Added")
-#     try:
-#         print('indide try')
-#         print('req', req)
-#         with urlopen(req) as response:
-#             print('response', response)
-#             status_code = response.status
-#             data = response.read().decode('utf-8')
-#             print(f"Successfully received response from Slack: {data}")
-#             return {
-#                 'statusCode': status_code,
-#                 'body': data
-#             }
-#     except HTTPError as e:
-#         print(f"HTTP Error calling Flask service: {e.code} {e.reason}")
-#         return {
-#             'statusCode': e.code,
-#             'body': f"HTTP Error: {e.code} {e.reason}"
-#         }
-#     except URLError as e:
-#         print(f"URL Error calling Flask service: {e.reason}")
-#         return {
-#             'statusCode': 500,
-#             'body': f"URL Error: {e.reason}"
-#         }
-#     except Exception as e:
-#         print(f"An unexpected error occurred: {e}")
-#         return {
-#             'statusCode': 500,
-#             'body': f"Unexpected Error: {e}"
-#         }
 
 def message_slack(message):
     """
@@ -2108,4 +2092,4 @@ def api_create_ts_dbs_collections():
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=9001)
-    
+
