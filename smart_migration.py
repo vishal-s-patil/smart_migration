@@ -79,6 +79,7 @@ redis_client = redis.Redis(host=config_dict['redis_uri'], port=config_dict['redi
 def process_panel(panel_name, cid):
     """Runs the database creation script for a given panel and CID and returns the log string."""
     db_name = f"ts_{panel_name}_{cid}"  # Assuming a naming convention for the DB
+    print(panel_name, cid)
     command = [
         "python",
         TS_DBS_CREATION_SCRIPT_PATH,
