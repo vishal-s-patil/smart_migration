@@ -105,7 +105,7 @@ def create_ts_dbs_collections(*args, **kwargs):
         logs = []
         for row in reader:
             panel_name = row.get('panel_name')
-            cid = row.get('cid')
+            cid = int(row.get('cid'))
             if panel_name and cid:
                 log_entry = process_panel(panel_name, cid)
                 logs.append(log_entry)
