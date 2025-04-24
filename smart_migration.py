@@ -772,14 +772,13 @@ def identify_panels_and_cids(text: str, llm: ChatGoogleGenerativeAI) -> list[str
         extracted_panels_str = response.content
 
         # extract the panels and cids from the response
-        panels_cids = [tuple(item.strip().split(',')) for item in extracted_panels_str.split('\n') if item.strip()]
+        panels_cids = []
+        for line in extracted_panels_str.split('\n'):
+            if line.strip():
+                parts = line.strip().split(',')
+                if len(parts) == 2:
+                    panels_cids.append((parts[0].strip(), parts[1].strip()))
 
-        # Further refine by splitting by newline in case the LLM included them
-        refined_panels = []
-        for panel in panels_cids:
-            refined_panels.extend([p.strip() for p in panel.split('\n') if p.strip()])
-
-        # Remove any empty strings that might have resulted from splitting
         return panels_cids
 
     except Exception as e:
