@@ -1255,7 +1255,6 @@ def validate_time_series_collections(*args, **kwargs) -> tuple[bool, str]:
         with open(TS_COLLECTION_VALIDATION_LOG, 'w') as f:
             result = subprocess.run(
                 ['python3', os.path.join(BASE_DIR, 'ts_mongo_ind_index_validation.py'), PANELS_FILE_PATH],
-                capture_output=True,
                 text=True,
                 stdout=f,
                 stderr=f
