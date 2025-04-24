@@ -1240,7 +1240,7 @@ def check_migration_concurrency(*args, **kwargs) -> tuple[bool, str]:
     except Exception as e:
         return False, f"Failed to check migration concurrency: {str(e)}"
 
-def validate_time_series_collections() -> tuple[bool, str]:
+def validate_time_series_collections(*args, **kwargs) -> tuple[bool, str]:
     """
     Validates time series indexes by running ts_mongo_ind_index_validation.py
     and checks the output log for errors.
