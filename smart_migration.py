@@ -83,7 +83,7 @@ def process_panel(panel_name, cid):
         "python",
         TS_DBS_CREATION_SCRIPT_PATH,
         panel_name,
-        cid
+        str(cid)
     ]
     result = subprocess.run(command, capture_output=True, text=True)
     output = result.stdout.strip().lower()
@@ -104,13 +104,13 @@ def create_ts_dbs_collections(*args, **kwargs):
         reader = csv.DictReader(csvfile)
         logs = []
         for row in reader:
-            panel_name = row.get('panel_name')
+            panel_name = row.get('panel')
             cid = int(row.get('cid'))
             if panel_name and cid:
                 log_entry = process_panel(panel_name, cid)
                 logs.append(log_entry)
             else:
-                logs.append(f"[Warning] [DB:N/A] [msg:Skipped row due to missing 'panel_name' or 'cid': {row}]")
+                logs.append(f"[Error] [DB:N/A] [msg:Skipped row due to missing 'panel' or 'cid': {row}]")
 
     with open(TS_COLLECTION_CREATION_LOG, 'w') as logfile:
         for log in logs:
