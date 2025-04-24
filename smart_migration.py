@@ -1044,23 +1044,28 @@ def kill_migration_processes(*args, **kwargs) -> tuple[bool, str]:
         killed = []
         
         for process in processes:
-            # Get process IDs
-            command = ['ps', '-eaf', '|', 'grep', process]
-            print('command', command)
-            result = subprocess.run(
-                command,
-                capture_output=True,
-                text=True
+            # First command: ps -eaf
+            ps_process = subprocess.Popen(['ps', '-eaf'], stdout=subprocess.PIPE)
+            
+            # Second command: grep the process (reading from the output of ps)
+            grep_process = subprocess.Popen(
+                ['grep', process],
+                stdin=ps_process.stdout,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
             )
             
-            print('result.stdout', result.stdout)
-
+            # Close the stdout of the first process
+            ps_process.stdout.close()
+            
+            # Get the output and error from grep
+            stdout, stderr = grep_process.communicate()
+            
             # Skip the grep process itself
-            lines = result.stdout.splitlines()
+            lines = stdout.decode().splitlines()
             for line in lines:
                 if process in line and 'grep' not in line:
                     pid = line.split()[1]  # Get the PID
-                    print('pid', pid)
                     subprocess.run(['kill', '-15', pid])
                     killed.append(f"{process} (PID: {pid})")
         
@@ -1476,20 +1481,28 @@ def check_migration_concurrency(*args, **kwargs) -> tuple[bool, str]:
     """
     try:
         # Check producer processes
-        result = subprocess.run(
-            ['ps', '-eaf', '|', 'grep', 'run_producer.py'],
-            capture_output=True,
-            text=True
+        ps_process = subprocess.Popen(['ps', '-eaf'], stdout=subprocess.PIPE)
+        grep_process = subprocess.Popen(
+            ['grep', 'run_producer.py'],
+            stdin=ps_process.stdout,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
         )
-        producer_count = len(result.stdout.splitlines())  # Subtract grep process
+        ps_process.stdout.close()
+        stdout, stderr = grep_process.communicate()
+        producer_count = len([line for line in stdout.decode().splitlines() if 'grep' not in line])
         
         # Check consumer processes
-        result = subprocess.run(
-            ['ps', '-eaf', '|', 'grep', 'run_consumer.py'],
-            capture_output=True,
-            text=True
+        ps_process = subprocess.Popen(['ps', '-eaf'], stdout=subprocess.PIPE)
+        grep_process = subprocess.Popen(
+            ['grep', 'run_consumer.py'],
+            stdin=ps_process.stdout,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
         )
-        consumer_count = len(result.stdout.splitlines())  # Subtract grep process
+        ps_process.stdout.close()
+        stdout, stderr = grep_process.communicate()
+        consumer_count = len([line for line in stdout.decode().splitlines() if 'grep' not in line])
         
         if producer_count == consumer_count:
             return True, f"Currently migration concurrency is {producer_count}"
