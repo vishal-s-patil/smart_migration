@@ -881,7 +881,7 @@ def create_panels_cid_csv_file(text: list, *args, **kwargs) -> tuple[bool, str]:
 
         panels_cids = identify_panels_and_cids(text, llm)
 
-        panels_file_path = os.path.join(BASE_DIR, 'panels_cids.csv')
+        panels_file_path = PANELS_CID_CSV_FILE_PATH
         
         with open(panels_file_path, 'w') as f:
             for panel_cid in panels_cids:
