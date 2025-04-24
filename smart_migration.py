@@ -1364,7 +1364,7 @@ tools = [
     Tool.from_function(func=start_producer_processes, name="start_producer_processes", description="Starts the run_producer.py script which start the producer processes for all methods."),
     Tool.from_function(func=start_consumer_processes, name="start_consumer_processes", description="Starts the run_consumer.py script which start the consumer processes for all methods."),
     Tool.from_function(func=start_kill_consumer_processes, name="start_kill_consumer_processes", description="Starts the kill_consumer.py script which kills the consumer processes if the migration is completed for the respective method."),
-    Tool.from_function(func=push_panels_info_to_redis, name="push_panels_info_to_redis", description="Pushes the panels info to Redis."),
+    Tool.from_function(func=push_panels_info_to_redis, name="push_panels_info_to_redis", description="Runs the push_panels_info_to_redis.py script which pushes the panels info to Redis."),
     Tool.from_function(func=run_health_check, name="run_health_check", description="Runs the health_check.py script and returns the result."),
 ]
     
