@@ -1318,6 +1318,13 @@ def create_time_series_collections() -> tuple[bool, str]:
     except Exception as e:
         return False, f"Failed to create time series collections: {str(e)}"
 
+def run_health_check(*args, **kwargs) -> tuple[bool, str]:
+    """
+    Runs the health_check.py script and returns the result.
+    """
+    return health_check(PROPERTY_FILE, HEALTH_CHECK_LOG)
+
+
 tools = [
     Tool.from_function(func=start_redis, name="start_redis", description="Starts the Redis server."),
     Tool.from_function(func=stop_redis, name="stop_redis", description="Stops the Redis server."),
@@ -1358,7 +1365,7 @@ tools = [
     Tool.from_function(func=start_consumer_processes, name="start_consumer_processes", description="Starts the run_consumer.py script which start the consumer processes for all methods."),
     Tool.from_function(func=start_kill_consumer_processes, name="start_kill_consumer_processes", description="Starts the kill_consumer.py script which kills the consumer processes if the migration is completed for the respective method."),
     Tool.from_function(func=push_panels_info_to_redis, name="push_panels_info_to_redis", description="Pushes the panels info to Redis."),
-    Tool.from_function(func=health_check, name="health_check", description="Checks the health of the system by running the health_check.py script and returns the result."),
+    Tool.from_function(func=run_health_check, name="run_health_check", description="Runs the health_check.py script and returns the result."),
 ]
     
 prompt = hub.pull("hwchase17/react")
