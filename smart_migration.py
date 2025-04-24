@@ -787,7 +787,7 @@ def identify_panels_and_cids(text: str, llm: ChatGoogleGenerativeAI) -> list[str
         return []
 
 
-def identify_methods(text: str, llm: ChatGoogleGenerativeAI) -> list[str]:
+def identify_methods(text: str) -> list[str]:
     """
     Identifies and returns methods from the given text.
     Methods can be comma-separated or line-separated.
