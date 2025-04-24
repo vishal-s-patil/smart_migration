@@ -45,7 +45,7 @@ RUN_CONSUMER_LOG = BASE_DIR + "/logs/run_consumer.log"
 KILL_CONSUMER_LOG = BASE_DIR + "/logs/kill_consumer.log"
 NUM_PARTITIONS = 10
 
-SLACK_URL = "https://hooks.slack.com/services/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"
+SLACK_URL = "https://hooks.slack.com/services/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"
 llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash-001", google_api_key=os.getenv("GOOGLE_API_KEY"))
 
 config_dict = {}
@@ -1760,22 +1760,69 @@ def api_backup_redis():
     return jsonify({"success": success, "message": message})
 
 # SLACK 
+# def message_slack(message):
+#     """
+#     Sends a message to the Slack channel using the Slack API.
+#     """
+#     print(f"Inside message_slack function")
+#     #curl -X POST -H 'Content-type: application/json' --data '{"text":"Hi saurabh?!"}' https://hooks.slack.com/services/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
+#     slack_url = SLACK_URL
+#     message = json.dumps({"text": message}).encode('utf-8')
+#     req = Request(slack_url, data=message, method='POST')
+#     req.add_header('Content-Type', 'application/json')  # Set the Content-Type header
+#     print(f"Headers Added")
+#     try:
+#         print('indide try')
+#         print('req', req)
+#         with urlopen(req) as response:
+#             print('response', response)
+#             status_code = response.status
+#             data = response.read().decode('utf-8')
+#             print(f"Successfully received response from Slack: {data}")
+#             return {
+#                 'statusCode': status_code,
+#                 'body': data
+#             }
+#     except HTTPError as e:
+#         print(f"HTTP Error calling Flask service: {e.code} {e.reason}")
+#         return {
+#             'statusCode': e.code,
+#             'body': f"HTTP Error: {e.code} {e.reason}"
+#         }
+#     except URLError as e:
+#         print(f"URL Error calling Flask service: {e.reason}")
+#         return {
+#             'statusCode': 500,
+#             'body': f"URL Error: {e.reason}"
+#         }
+#     except Exception as e:
+#         print(f"An unexpected error occurred: {e}")
+#         return {
+#             'statusCode': 500,
+#             'body': f"Unexpected Error: {e}"
+#         }
+
 def message_slack(message):
     """
     Sends a message to the Slack channel using the Slack API.
     """
     print(f"Inside message_slack function")
-    #curl -X POST -H 'Content-type: application/json' --data '{"text":"Hi saurabh?!"}' https://hooks.slack.com/services/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
-    slack_url = SLACK_URL
-    message = json.dumps({"text": message}).encode('utf-8')
-    req = Request(slack_url, data=message, method='POST')
-    req.add_header('Content-Type', 'application/json')  # Set the Content-Type header
+    if not SLACK_URL:
+        print("Error: SLACK_URL environment variable not set.")
+        return {
+            'statusCode': 500,
+            'body': "Error: SLACK_URL environment variable not set."
+        }
+
+    slack_data = json.dumps({"text": message}).encode('utf-8')
+    req = Request(SLACK_URL, data=slack_data, method='POST')
+    req.add_header('Content-Type', 'application/json')
     print(f"Headers Added")
     try:
-        print('indide try')
-        print('req', req)
+        print('inside try')
+        print('req', req.full_url, req.data, req.headers) # Print more details for debugging
         with urlopen(req) as response:
-            print('response', response)
+            print('response', response.status)
             status_code = response.status
             data = response.read().decode('utf-8')
             print(f"Successfully received response from Slack: {data}")
@@ -1784,13 +1831,13 @@ def message_slack(message):
                 'body': data
             }
     except HTTPError as e:
-        print(f"HTTP Error calling Flask service: {e.code} {e.reason}")
+        print(f"HTTP Error calling Slack API: {e.code} {e.reason}")
         return {
             'statusCode': e.code,
             'body': f"HTTP Error: {e.code} {e.reason}"
         }
     except URLError as e:
-        print(f"URL Error calling Flask service: {e.reason}")
+        print(f"URL Error calling Slack API: {e.reason}")
         return {
             'statusCode': 500,
             'body': f"URL Error: {e.reason}"
