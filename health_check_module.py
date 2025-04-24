@@ -181,6 +181,8 @@ def check_kafka_connectivity(
             logger.error(f"Failed to create topic or test producer with all brokers: {e}")
             return False
         finally:
+            # delete the test topic
+            admin_client.delete_topics([test_topic])
             if admin_client:
                 try:
                     admin_client.close()
