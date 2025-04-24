@@ -2,15 +2,19 @@ from flask import Flask, jsonify, request
 import redis
 import subprocess
 import os
+import csv
 import re
 from dotenv import load_dotenv
 from langchain.agents import create_react_agent, AgentExecutor
 from langchain import hub
+from langchain.prompts import PromptTemplate
+from langchain.memory import ConversationBufferMemory
 from langchain.tools import Tool
 from langchain_google_genai import ChatGoogleGenerativeAI
 from kafka.admin import KafkaAdminClient
 from health_check_module import health_check
 import shutil
+import logging
 from datetime import datetime
 import time
 import json
@@ -22,6 +26,7 @@ load_dotenv()
 app = Flask(__name__)
 # BASE_DIR = "/home/mongodb/migration_orchestration"
 BASE_DIR = "/home/mongodb/smart_migration"
+PANELS_CID_CSV_FILE_PATH = BASE_DIR + "/panels_cid.csv"
 REDIS_BACKUP_DIR = BASE_DIR + "/redis_backup"
 HEALTH_CHECK_LOG = BASE_DIR + "/logs/health_check.log"
 PANELS_FILE_PATH = BASE_DIR + "/panels.txt"     
@@ -29,6 +34,8 @@ PROPERTY_FILE = "/etc/mongoremodel.properties"
 BASE_MIGRATION_LOG_DIR = "/var/log/apps/mongodataremodel"
 TOPIC_CREATION_LOG = BASE_DIR + "/logs/create_topics.log"
 TOPIC_VALIDATION_LOG = BASE_DIR + "/logs/validate_topics.log"
+TS_DBS_CREATION_SCRIPT_PATH = BASE_DIR + '/create_db/create_ts_dbs.py'
+TS_COLLECTION_CREATION_LOG = BASE_DIR + "/logs/ts_collection_creation.log"
 TS_COLLECTION_VALIDATION_LOG = BASE_DIR + "/logs/ts_index_validation.log"
 TS_DB_CREATION_LOG = BASE_DIR + "/logs/ts_db_creation.log"
 TS_DB_CREATION_LOG = BASE_DIR + "/logs/ts_db_creation.log"
@@ -68,6 +75,46 @@ def read_property_file() -> tuple[bool, dict]:
 
 read_property_file()
 redis_client = redis.Redis(host=config_dict['redis_uri'], port=config_dict['redis_port'], db=0)
+
+def process_panel(panel_name, cid):
+    """Runs the database creation script for a given panel and CID and returns the log string."""
+    db_name = f"ts_{panel_name}_{cid}"  # Assuming a naming convention for the DB
+    command = [
+        "python",
+        TS_DBS_CREATION_SCRIPT_PATH,
+        panel_name,
+        cid
+    ]
+    result = subprocess.run(command, capture_output=True, text=True)
+    output = result.stdout.strip().lower()
+    log_string = ""
+
+    if "database created sucessfully" in output:
+        log_string = f"[Info] [DB:{db_name}] [msg:created]"
+    else:
+        error_message = result.stderr.strip()
+        log_string = f"[Error] [DB:{db_name}] [msg:failed] [err:{error_message}]"
+    return log_string
+
+def create_ts_dbs_collections(*args, **kwargs):
+    """
+    reads the csv containing the panels and cids and creates the time series databases and collections
+    """
+    with open(PANELS_CID_CSV_FILE_PATH, 'r') as csvfile:
+        reader = csv.DictReader(csvfile)
+        logs = []
+        for row in reader:
+            panel_name = row.get('panel_name')
+            cid = row.get('cid')
+            if panel_name and cid:
+                log_entry = process_panel(panel_name, cid)
+                logs.append(log_entry)
+            else:
+                logs.append(f"[Warning] [DB:N/A] [msg:Skipped row due to missing 'panel_name' or 'cid': {row}]")
+
+    with open(TS_COLLECTION_CREATION_LOG, 'w') as logfile:
+        for log in logs:
+            logfile.write(log + '\n')
 
 def start_redis(*args, **kwargs):
     """
@@ -698,6 +745,48 @@ def identify_panels(text: str, llm: ChatGoogleGenerativeAI) -> list[str]:
         return []
 
 
+def identify_panels_and_cids(text: str, llm: ChatGoogleGenerativeAI) -> list[str]:
+    """
+    Identifies and returns panels and cids from the given text.
+    Panels and cids can be given in a csv format or python list of tuples format.
+    Uses the provided LLM to extract and refine the panel list.
+
+    Args:
+        text: The input text containing potential panel information.
+        llm: An initialized Langchain ChatGoogleGenerativeAI model.
+
+    Returns:
+        A list of identified panel names and cids.
+    """
+    try:
+        prompt = f"""You are an expert in identifying distinct panels and cids from text.
+        Given the following text, identify all the individual panel names and cids.
+        Panels and cids can be separated by commas or appear on separate lines.
+
+        Text:
+        \"{text}\"
+
+        Return the identified panels and cids as a csv format."""
+
+        response = llm.invoke(prompt)
+        extracted_panels_str = response.content
+
+        # extract the panels and cids from the response
+        panels_cids = [tuple(item.strip().split(',')) for item in extracted_panels_str.split('\n') if item.strip()]
+
+        # Further refine by splitting by newline in case the LLM included them
+        refined_panels = []
+        for panel in panels_cids:
+            refined_panels.extend([p.strip() for p in panel.split('\n') if p.strip()])
+
+        # Remove any empty strings that might have resulted from splitting
+        return panels_cids
+
+    except Exception as e:
+        print(f"An error occurred during panel identification: {e}")
+        return []
+
+
 def identify_methods(text: str, llm: ChatGoogleGenerativeAI) -> list[str]:
     """
     Identifies and returns methods from the given text.
@@ -771,6 +860,39 @@ def create_panels_file(text: list, *args, **kwargs) -> tuple[bool, str]:
         return True, f"Successfully created panels file at {panels_file_path}"
     except Exception as e:
         return False, f"Failed to create panels file: {str(e)}"
+
+
+def create_panels_cid_csv_file(text: list, *args, **kwargs) -> tuple[bool, str]:
+    """
+    Extracts panels and cids from the given text and creates a panels_cid.csv file with one panel,cid per line.
+    
+    Args:
+        text (str): Text containing panel information
+        *args: Variable length argument list
+        **kwargs: Arbitrary keyword arguments
+    
+    Returns:
+        tuple: (success: bool, message: str)
+            - success: True if file was created successfully, False otherwise
+            - message: Status message describing the result
+    """
+    try:
+        if not isinstance(text, str):
+            return False, "Input must be a string"
+
+        panels_cids = identify_panels_and_cids(text, llm)
+
+        panels_file_path = os.path.join(BASE_DIR, 'panels_cids.csv')
+        
+        with open(panels_file_path, 'w') as f:
+            for panel_cid in panels_cids:
+                if not isinstance(panel_cid, tuple):
+                    return False, f"Invalid panel format: {panel_cid}"
+                f.write(f"{panel_cid[0]},{panel_cid[1]}\n")
+                
+        return True, f"Successfully created panels_cids file at {panels_file_path}"
+    except Exception as e:
+        return False, f"Failed to create panels_cids file: {str(e)}"
 
 def get_panels_file_length(*args, **kwargs) -> tuple[bool, dict]:
     """
@@ -1562,11 +1684,18 @@ tools = [
     Tool.from_function(func=start_producer_processes_for_specific_methods, name="start_producer_processes_for_specific_methods", description="Starts the run_producer.py script which start the producer processes for specific methods. This function expects a text input with the methods to start the producer for."),
     Tool.from_function(func=start_consumer_processes_for_specific_methods, name="start_consumer_processes_for_specific_methods", description="Starts the run_consumer.py script which start the consumer processes for specific methods. This function expects a text input with the methods to start the consumer for."),
     Tool.from_function(func=backup_redis_data, name="backup_redis_data", description="Takes backup of Redis data in human-readable format for both GET and HGETALL operations."),
+    Tool.from_function(func=create_ts_dbs_collections, name="create_ts_dbs_collections", description="Reads the csv containing the panels and cids and creates the time series databases or if databases already exist, it creates the collections."),
+    Tool.from_function(func=create_panels_cid_csv_file, name="create_panels_cid_csv_file", description="Creates a csv file containing the panels and cids."),
 ]
-    
+
+# custom_prompt_template = """"""
+memory = ConversationBufferMemory()
 prompt = hub.pull("hwchase17/react")
+# custom_prompt = PromptTemplate(
+#     template=custom_prompt_template
+# )
 agent = create_react_agent(llm, tools, prompt)
-agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True, memory=memory)
 
 def process_smart_query(query):
     """
@@ -1911,6 +2040,48 @@ def api_start_consumer():
 def api_start_kill_consumer():
     success, message = start_kill_consumer_processes()
     return jsonify({"success": success, "message": message})
+
+# Add API endpoint for time series database and collection creation
+@app.route('/migration/create/ts-dbs-collections', methods=['POST'])
+def api_create_ts_dbs_collections():
+    """
+    API endpoint to create time series databases and collections from panels_cid.csv
+    """
+    try:
+        # Check if the CSV file exists
+        if not os.path.exists(PANELS_CID_CSV_FILE_PATH):
+            return jsonify({
+                "success": False,
+                "message": f"CSV file not found at {PANELS_CID_CSV_FILE_PATH}"
+            }), 404
+
+        # Check if the creation script exists
+        if not os.path.exists(TS_DBS_CREATION_SCRIPT_PATH):
+            return jsonify({
+                "success": False,
+                "message": f"Time series database creation script not found at {TS_DBS_CREATION_SCRIPT_PATH}"
+            }), 404
+
+        # Create the time series databases and collections
+        success, message = create_ts_dbs_collections()
+        
+        if success:
+            return jsonify({
+                "success": True,
+                "message": "Successfully created time series databases and collections",
+                "log_file": TS_COLLECTION_CREATION_LOG
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "message": f"Failed to create time series databases and collections: {message}"
+            }), 500
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"An error occurred: {str(e)}"
+        }), 500
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=9001)
