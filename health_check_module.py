@@ -174,6 +174,9 @@ def check_kafka_connectivity(
             
             logger.info(f"Successfully verified all Kafka brokers and created test topic: {valid_servers}")
             return True
+        except TopicAlreadyExistsError as e:
+            logger.info(f"Topic already exists: {e}")
+            return True
         except Exception as e:
             logger.error(f"Failed to create topic or test producer with all brokers: {e}")
             return False
@@ -281,7 +284,7 @@ def health_check(property_file: str, log_file_path: str) -> None:
         return True, "All services are healthy."
     else:
         logger.error("One or more services are unhealthy.")
-        return False
+        return False, f"Redis: {redis_healthy}, MongoDB: {mongo_healthy}, Kafka: {kafka_healthy}"
 
 def main() -> None:
     """Main entry point for the health check module."""
