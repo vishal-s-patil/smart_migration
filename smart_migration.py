@@ -1458,7 +1458,7 @@ def run_health_check(*args, **kwargs) -> tuple[bool, str]:
 
 def backup_redis_data(*args, **kwargs) -> tuple[bool, str]:
     """
-    Takes backup of Redis data in human-readable format for both GET and HGETALL operations.
+    Takes backup of Redis data in human-readable format for GET, HGETALL, and LRANGE operations.
     
     Returns:
         tuple: (success: bool, message: str)
@@ -1470,24 +1470,30 @@ def backup_redis_data(*args, **kwargs) -> tuple[bool, str]:
         # Generate timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
-        # Create backup files for both operations
+        # Create backup files for all operations
         get_filename = f"redis_backup_get_{timestamp}.txt"
         hgetall_filename = f"redis_backup_hgetall_{timestamp}.txt"
+        queue_filename = f"redis_backup_queues_{timestamp}.txt"
         
         get_filepath = os.path.join(REDIS_BACKUP_DIR, get_filename)
         hgetall_filepath = os.path.join(REDIS_BACKUP_DIR, hgetall_filename)
+        queue_filepath = os.path.join(REDIS_BACKUP_DIR, queue_filename)
         
         # Get Redis connection details from config
         redis_host = config_dict.get('redis_uri', 'localhost')
         redis_port = config_dict.get('redis_port', '6379')
         
         # Backup GET operations using redis-cli
-        get_cmd = f"redis-cli -h {redis_host} -p {redis_port} --scan | while read key; do echo \"$key: $(redis-cli -h {redis_host} -p {redis_port} GET \"$key\")\"; done > {get_filepath}"
+        get_cmd = f"redis-cli -h {redis_host} -p {redis_port} --scan | while read key; do echo \"$key: $(redis-cli -h {redis_host} -p {redis_port} GET \"$key\" 2>/dev/null)\"; done > {get_filepath}"
         subprocess.run(get_cmd, shell=True, check=True)
         
         # Backup HGETALL operations using redis-cli
-        hgetall_cmd = f"redis-cli -h {redis_host} -p {redis_port} --scan | while read key; do echo \"$key:\"; redis-cli -h {redis_host} -p {redis_port} HGETALL \"$key\"; echo \"\"; done > {hgetall_filepath}"
+        hgetall_cmd = f"redis-cli -h {redis_host} -p {redis_port} --scan | while read key; do echo \"$key:\"; redis-cli -h {redis_host} -p {redis_port} HGETALL \"$key\" 2>/dev/null; echo \"\"; done > {hgetall_filepath}"
         subprocess.run(hgetall_cmd, shell=True, check=True)
+        
+        # Backup Queue operations using redis-cli
+        queue_cmd = f"redis-cli -h {redis_host} -p {redis_port} --scan | while read key; do echo \"Queue: $key: $(redis-cli -h {redis_host} -p {redis_port} LRANGE \"$key\" 0 -1 2>/dev/null)\"; done > {queue_filepath}"
+        subprocess.run(queue_cmd, shell=True, check=True)
         
         # Add headers to the files
         with open(get_filepath, 'r+') as f:
@@ -1500,7 +1506,12 @@ def backup_redis_data(*args, **kwargs) -> tuple[bool, str]:
             f.seek(0, 0)
             f.write(f"Redis Backup - HGETALL Operations\nTimestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n{'='*80}\n\n{content}")
         
-        return True, f"Successfully created Redis backups:\nGET: {get_filepath}\nHGETALL: {hgetall_filepath}"
+        with open(queue_filepath, 'r+') as f:
+            content = f.read()
+            f.seek(0, 0)
+            f.write(f"Redis Backup - Queue Operations\nTimestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n{'='*80}\n\n{content}")
+        
+        return True, f"Successfully created Redis backups:\nGET: {get_filepath}\nHGETALL: {hgetall_filepath}\nQueues: {queue_filepath}"
     except subprocess.CalledProcessError as e:
         return False, f"Failed to execute Redis CLI command: {str(e)}"
     except Exception as e:
