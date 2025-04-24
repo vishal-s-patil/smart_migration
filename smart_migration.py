@@ -1051,7 +1051,7 @@ def kill_migration_processes(*args, **kwargs) -> tuple[bool, str]:
                 text=True
             )
             
-            print(result.stdout)
+            print('result.stdout', result.stdout)
 
             # Skip the grep process itself
             lines = result.stdout.splitlines()
