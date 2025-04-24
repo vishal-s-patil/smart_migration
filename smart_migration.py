@@ -1456,12 +1456,9 @@ def run_health_check(*args, **kwargs) -> tuple[bool, str]:
     """
     return health_check(PROPERTY_FILE, HEALTH_CHECK_LOG)
 
-def backup_redis_data(backup_type: str = 'get', *args, **kwargs) -> tuple[bool, str]:
+def backup_redis_data(*args, **kwargs) -> tuple[bool, str]:
     """
-    Takes backup of Redis data in human-readable format.
-    
-    Args:
-        backup_type (str): Type of backup - 'get' or 'hgetall'
+    Takes backup of Redis data in human-readable format for both GET and HGETALL operations.
     
     Returns:
         tuple: (success: bool, message: str)
@@ -1470,39 +1467,51 @@ def backup_redis_data(backup_type: str = 'get', *args, **kwargs) -> tuple[bool, 
         # Create backup directory if it doesn't exist
         os.makedirs(REDIS_BACKUP_DIR, exist_ok=True)
         
-        # Generate timestamp and filename
+        # Generate timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"redis_backup_{backup_type}_{timestamp}.txt"
-        filepath = os.path.join(REDIS_BACKUP_DIR, filename)
         
-        with open(filepath, 'w') as f:
-            # Write header
-            f.write(f"Redis Backup - {backup_type.upper()}\n")
+        # Create backup files for both operations
+        get_filename = f"redis_backup_get_{timestamp}.txt"
+        hgetall_filename = f"redis_backup_hgetall_{timestamp}.txt"
+        
+        get_filepath = os.path.join(REDIS_BACKUP_DIR, get_filename)
+        hgetall_filepath = os.path.join(REDIS_BACKUP_DIR, hgetall_filename)
+        
+        # Get all keys
+        keys = redis_client.keys("*")
+        
+        # Backup GET operations
+        with open(get_filepath, 'w') as f:
+            f.write("Redis Backup - GET Operations\n")
             f.write(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
             f.write("-" * 80 + "\n\n")
             
-            # Get all keys
-            keys = redis_client.keys("*")
+            for key in keys:
+                key = key.decode('utf-8')
+                value = redis_client.get(key)
+                if value:
+                    f.write(f"Key: {key}\n")
+                    f.write(f"Value: {value.decode('utf-8')}\n")
+                    f.write("-" * 40 + "\n")
+        
+        # Backup HGETALL operations
+        with open(hgetall_filepath, 'w') as f:
+            f.write("Redis Backup - HGETALL Operations\n")
+            f.write(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write("-" * 80 + "\n\n")
             
             for key in keys:
                 key = key.decode('utf-8')
-                if backup_type == 'get':
-                    value = redis_client.get(key)
-                    if value:
-                        f.write(f"Key: {key}\n")
-                        f.write(f"Value: {value.decode('utf-8')}\n")
-                        f.write("-" * 40 + "\n")
-                elif backup_type == 'hgetall':
-                    value = redis_client.hgetall(key)
-                    if value:
-                        f.write(f"Hash Key: {key}\n")
-                        for field, val in value.items():
-                            f.write(f"  {field.decode('utf-8')}: {val.decode('utf-8')}\n")
-                        f.write("-" * 40 + "\n")
+                value = redis_client.hgetall(key)
+                if value:
+                    f.write(f"Hash Key: {key}\n")
+                    for field, val in value.items():
+                        f.write(f"  {field.decode('utf-8')}: {val.decode('utf-8')}\n")
+                    f.write("-" * 40 + "\n")
         
-        return True, f"Successfully created Redis backup at {filepath}"
+        return True, f"Successfully created Redis backups:\nGET: {get_filepath}\nHGETALL: {hgetall_filepath}"
     except Exception as e:
-        return False, f"Failed to create Redis backup: {str(e)}"
+        return False, f"Failed to create Redis backups: {str(e)}"
 
 tools = [
     Tool.from_function(func=start_redis, name="start_redis", description="Starts the Redis server."),
@@ -1548,7 +1557,7 @@ tools = [
     Tool.from_function(func=read_property_file, name="read_property_file", description="Reads or updates the property file and returns the result."),
     Tool.from_function(func=start_producer_processes_for_specific_methods, name="start_producer_processes_for_specific_methods", description="Starts the run_producer.py script which start the producer processes for specific methods. This function expects a text input with the methods to start the producer for."),
     Tool.from_function(func=start_consumer_processes_for_specific_methods, name="start_consumer_processes_for_specific_methods", description="Starts the run_consumer.py script which start the consumer processes for specific methods. This function expects a text input with the methods to start the consumer for."),
-    Tool.from_function(func=backup_redis_data, name="backup_redis_data", description="Takes backup of Redis data in human-readable format. Accepts 'get' or 'hgetall' as backup type."),
+    Tool.from_function(func=backup_redis_data, name="backup_redis_data", description="Takes backup of Redis data in human-readable format for both GET and HGETALL operations."),
 ]
     
 prompt = hub.pull("hwchase17/react")
@@ -1634,15 +1643,9 @@ def api_check_redis_status():
         return jsonify({"success": True, "data": result})
     return jsonify({"success": False, "message": result})
 
-@app.route('/redis/backup/<backup_type>', methods=['POST'])
-def api_backup_redis(backup_type):
-    if backup_type not in ['get', 'hgetall']:
-        return jsonify({
-            "success": False,
-            "message": "Invalid backup type. Must be 'get' or 'hgetall'"
-        }), 400
-        
-    success, message = backup_redis_data(backup_type)
+@app.route('/redis/backup', methods=['POST'])
+def api_backup_redis():
+    success, message = backup_redis_data()
     return jsonify({"success": success, "message": message})
 
 # SLACK 
