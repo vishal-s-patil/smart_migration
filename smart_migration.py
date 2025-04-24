@@ -45,6 +45,7 @@ RUN_CONSUMER_LOG = BASE_DIR + "/logs/run_consumer.log"
 KILL_CONSUMER_LOG = BASE_DIR + "/logs/kill_consumer.log"
 NUM_PARTITIONS = 10
 
+SLACK_URL = "https://hooks.slack.com/services/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"
 llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash-001", google_api_key=os.getenv("GOOGLE_API_KEY"))
 
 config_dict = {}
@@ -1765,7 +1766,7 @@ def message_slack(message):
     """
     print(f"Inside message_slack function")
     #curl -X POST -H 'Content-type: application/json' --data '{"text":"Hi saurabh?!"}' https://hooks.slack.com/services/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
-    slack_url = "https://hooks.slack.com/services/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"
+    slack_url = SLACK_URL
     message = json.dumps({"text": message}).encode('utf-8')
     req = Request(slack_url, data=message, method='POST')
     req.add_header('Content-Type', 'application/json')  # Set the Content-Type header
