@@ -528,6 +528,7 @@ def run_create_topics(*args, **kwargs):
         
         return True, "Topics created successfully"
     except Exception as e:
+        print(f"Error running create_topics.py: {str(e)}")
         return False, f"Error running create_topics.py: {str(e)}"
 
 def run_validate_topics(*args, **kwargs):
