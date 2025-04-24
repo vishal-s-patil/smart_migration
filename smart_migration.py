@@ -22,6 +22,7 @@ load_dotenv()
 app = Flask(__name__)
 # BASE_DIR = "/home/mongodb/migration_orchestration"
 BASE_DIR = "/home/mongodb/smart_migration"
+HEALTH_CHECK_LOG = BASE_DIR + "/logs/health_check.log"
 PANELS_FILE_PATH = BASE_DIR + "/panels.txt"     
 PROPERTY_FILE = "/etc/mongoremodel.properties"
 BASE_MIGRATION_LOG_DIR = "/var/log/apps/mongodataremodel"
@@ -962,7 +963,7 @@ def pre_migration_check(*args, **kwargs) -> tuple[bool, str]:
     """
     try:
         # 1. Initial health check
-        if not health_check(PROPERTY_FILE):
+        if not health_check(PROPERTY_FILE, HEALTH_CHECK_LOG):
             return False, "Health check failed, please check"
             
         # 2. Redis cleanup and verification
@@ -1016,7 +1017,7 @@ def pre_migration_check(*args, **kwargs) -> tuple[bool, str]:
                 return False, f"Migration process {process} is still running"
                 
         # 8. Final health check
-        if not health_check(PROPERTY_FILE):
+        if not health_check(PROPERTY_FILE, HEALTH_CHECK_LOG):
             return False, "Final health check failed, please check"
             
         return True, "All pre-migration checks passed successfully"
