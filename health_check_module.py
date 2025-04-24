@@ -278,7 +278,7 @@ def health_check(property_file: str, log_file_path: str) -> None:
     # Overall health status
     if redis_healthy and mongo_healthy and kafka_healthy:
         logger.info("All services are healthy.")
-        return True
+        return True, "All services are healthy."
     else:
         logger.error("One or more services are unhealthy.")
         return False
