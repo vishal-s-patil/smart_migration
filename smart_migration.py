@@ -1045,8 +1045,10 @@ def kill_migration_processes(*args, **kwargs) -> tuple[bool, str]:
         
         for process in processes:
             # Get process IDs
+            command = ['ps', '-eaf', '|', 'grep', process]
+            print('command', command)
             result = subprocess.run(
-                ['ps', '-eaf', '|', 'grep', process],
+                command,
                 capture_output=True,
                 text=True
             )
