@@ -1252,18 +1252,19 @@ def validate_time_series_collections() -> tuple[bool, str]:
     """
     try:
         # Run the validation script and redirect output to log file
-        result = subprocess.run(
-            ['python3', os.path.join(BASE_DIR, 'ts_mongo_ind_index_validation.py'), '>', TS_COLLECTION_VALIDATION_LOG],
-            capture_output=True,
-            text=True
-        )
-        
-        # Write output to log file
         with open(TS_COLLECTION_VALIDATION_LOG, 'w') as f:
-            f.write(result.stdout)
-            if result.stderr:
-                f.write("\nErrors:\n" + result.stderr)
+            result = subprocess.run(
+                ['python3', os.path.join(BASE_DIR, 'ts_mongo_ind_index_validation.py'), PANELS_FILE_PATH],
+                capture_output=True,
+                text=True,
+                stdout=f,
+                stderr=f
+            )
         
+        # Check for errors in the output
+        if result.returncode != 0:
+            return False, f"Validation script failed with return code {result.returncode}"
+            
         # Check for errors in the output
         if result.returncode != 0:
             return False, f"Validation script failed with return code {result.returncode}"
