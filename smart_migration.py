@@ -81,7 +81,7 @@ def process_panel(panel_name, cid):
     db_name = f"ts_{panel_name}_{cid}"  # Assuming a naming convention for the DB
     print(panel_name, cid)
     command = [
-        "python2.7",
+        "/usr/local/bin/python2.7",
         TS_DBS_CREATION_SCRIPT_PATH,
         panel_name,
         str(cid)
