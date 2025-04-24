@@ -1477,45 +1477,32 @@ def backup_redis_data(*args, **kwargs) -> tuple[bool, str]:
         get_filepath = os.path.join(REDIS_BACKUP_DIR, get_filename)
         hgetall_filepath = os.path.join(REDIS_BACKUP_DIR, hgetall_filename)
         
-        # Get all keys
-        keys = redis_client.keys("*")
+        # Get Redis connection details from config
+        redis_host = config_dict.get('redis_uri', 'localhost')
+        redis_port = config_dict.get('redis_port', '6379')
         
-        # Backup GET operations
-        with open(get_filepath, 'w') as f:
-            f.write("Redis Backup - GET Operations\n")
-            f.write(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write("-" * 80 + "\n\n")
-            
-            for key in keys:
-                key = key.decode('utf-8')
-                try:
-                    value = redis_client.get(key)
-                    if value:
-                        f.write(f"{key}: {value.decode('utf-8')}\n")
-                except Exception as e:
-                    # Skip keys that are not string type
-                    continue
+        # Backup GET operations using redis-cli
+        get_cmd = f"redis-cli -h {redis_host} -p {redis_port} --scan | while read key; do echo \"$key: $(redis-cli -h {redis_host} -p {redis_port} GET \"$key\")\"; done > {get_filepath}"
+        subprocess.run(get_cmd, shell=True, check=True)
         
-        # Backup HGETALL operations
-        with open(hgetall_filepath, 'w') as f:
-            f.write("Redis Backup - HGETALL Operations\n")
-            f.write(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write("-" * 80 + "\n\n")
-            
-            for key in keys:
-                key = key.decode('utf-8')
-                try:
-                    value = redis_client.hgetall(key)
-                    if value:
-                        f.write(f"{key}:\n")
-                        for field, val in value.items():
-                            f.write(f"  {field.decode('utf-8')}: {val.decode('utf-8')}\n")
-                        f.write("\n")
-                except Exception as e:
-                    # Skip keys that are not hash type
-                    continue
+        # Backup HGETALL operations using redis-cli
+        hgetall_cmd = f"redis-cli -h {redis_host} -p {redis_port} --scan | while read key; do echo \"$key:\"; redis-cli -h {redis_host} -p {redis_port} HGETALL \"$key\"; echo \"\"; done > {hgetall_filepath}"
+        subprocess.run(hgetall_cmd, shell=True, check=True)
+        
+        # Add headers to the files
+        with open(get_filepath, 'r+') as f:
+            content = f.read()
+            f.seek(0, 0)
+            f.write(f"Redis Backup - GET Operations\nTimestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n{'='*80}\n\n{content}")
+        
+        with open(hgetall_filepath, 'r+') as f:
+            content = f.read()
+            f.seek(0, 0)
+            f.write(f"Redis Backup - HGETALL Operations\nTimestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n{'='*80}\n\n{content}")
         
         return True, f"Successfully created Redis backups:\nGET: {get_filepath}\nHGETALL: {hgetall_filepath}"
+    except subprocess.CalledProcessError as e:
+        return False, f"Failed to execute Redis CLI command: {str(e)}"
     except Exception as e:
         return False, f"Failed to create Redis backups: {str(e)}"
 
