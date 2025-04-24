@@ -1488,11 +1488,13 @@ def backup_redis_data(*args, **kwargs) -> tuple[bool, str]:
             
             for key in keys:
                 key = key.decode('utf-8')
-                value = redis_client.get(key)
-                if value:
-                    f.write(f"Key: {key}\n")
-                    f.write(f"Value: {value.decode('utf-8')}\n")
-                    f.write("-" * 40 + "\n")
+                try:
+                    value = redis_client.get(key)
+                    if value:
+                        f.write(f"{key}: {value.decode('utf-8')}\n")
+                except Exception as e:
+                    # Skip keys that are not string type
+                    continue
         
         # Backup HGETALL operations
         with open(hgetall_filepath, 'w') as f:
@@ -1502,12 +1504,16 @@ def backup_redis_data(*args, **kwargs) -> tuple[bool, str]:
             
             for key in keys:
                 key = key.decode('utf-8')
-                value = redis_client.hgetall(key)
-                if value:
-                    f.write(f"Hash Key: {key}\n")
-                    for field, val in value.items():
-                        f.write(f"  {field.decode('utf-8')}: {val.decode('utf-8')}\n")
-                    f.write("-" * 40 + "\n")
+                try:
+                    value = redis_client.hgetall(key)
+                    if value:
+                        f.write(f"{key}:\n")
+                        for field, val in value.items():
+                            f.write(f"  {field.decode('utf-8')}: {val.decode('utf-8')}\n")
+                        f.write("\n")
+                except Exception as e:
+                    # Skip keys that are not hash type
+                    continue
         
         return True, f"Successfully created Redis backups:\nGET: {get_filepath}\nHGETALL: {hgetall_filepath}"
     except Exception as e:
