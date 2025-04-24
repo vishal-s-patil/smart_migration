@@ -1358,6 +1358,7 @@ tools = [
     Tool.from_function(func=start_consumer_processes, name="start_consumer_processes", description="Starts the run_consumer.py script which start the consumer processes for all methods."),
     Tool.from_function(func=start_kill_consumer_processes, name="start_kill_consumer_processes", description="Starts the kill_consumer.py script which kills the consumer processes if the migration is completed for the respective method."),
     Tool.from_function(func=push_panels_info_to_redis, name="push_panels_info_to_redis", description="Pushes the panels info to Redis."),
+    Tool.from_function(func=health_check, name="health_check", description="Checks the health of the system by running the health_check.py script and returns the result."),
 ]
     
 prompt = hub.pull("hwchase17/react")
