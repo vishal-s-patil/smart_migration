@@ -45,7 +45,7 @@ RUN_CONSUMER_LOG = BASE_DIR + "/logs/run_consumer.log"
 KILL_CONSUMER_LOG = BASE_DIR + "/logs/kill_consumer.log"
 NUM_PARTITIONS = 10
 
-SLACK_URL = "https://hooks.slack.com/services/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"
+SLACK_URL = "https://hooks.slack.com/services/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"
 llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash-001", google_api_key=os.getenv("GOOGLE_API_KEY"))
 
 config_dict = {}
