@@ -1773,6 +1773,7 @@ def message_slack(message):
     print(f"Headers Added")
     try:
         print('indide try')
+        print('req', req)
         with urlopen(req) as response:
             print('response', response)
             status_code = response.status
