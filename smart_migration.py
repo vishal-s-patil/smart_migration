@@ -49,7 +49,7 @@ llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash-001", google_api_key=os.get
 
 config_dict = {}
 
-def read_property_file() -> tuple[bool, dict]:
+def read_property_file(*args, **kwargs) -> tuple[bool, dict]:
     """
     Reads the property file and returns its contents as a dictionary.
     
