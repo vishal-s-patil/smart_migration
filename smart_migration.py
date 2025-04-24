@@ -1484,15 +1484,15 @@ def backup_redis_data(*args, **kwargs) -> tuple[bool, str]:
         redis_port = config_dict.get('redis_port', '6379')
         
         # Backup GET operations using redis-cli
-        get_cmd = f"redis-cli -h {redis_host} -p {redis_port} --scan | while read key; do echo \"$key: $(redis-cli -h {redis_host} -p {redis_port} GET \"$key\" 2>/dev/null)\"; done > {get_filepath}"
+        get_cmd = f"redis-cli -h {redis_host} -p {redis_port} --scan | while read key; do result=$(redis-cli -h {redis_host} -p {redis_port} GET \"$key\" 2>/dev/null); [ -n \"$result\" ] && echo \"$key: $result\"; done > {get_filepath}"
         subprocess.run(get_cmd, shell=True, check=True)
         
         # Backup HGETALL operations using redis-cli
-        hgetall_cmd = f"redis-cli -h {redis_host} -p {redis_port} --scan | while read key; do echo \"$key:\"; redis-cli -h {redis_host} -p {redis_port} HGETALL \"$key\" 2>/dev/null; echo \"\"; done > {hgetall_filepath}"
+        hgetall_cmd = f"redis-cli -h {redis_host} -p {redis_port} --scan | while read key; do result=$(redis-cli -h {redis_host} -p {redis_port} HGETALL \"$key\" 2>/dev/null); [ -n \"$result\" ] && echo \"$key:\" && echo \"$result\" && echo \"\"; done > {hgetall_filepath}"
         subprocess.run(hgetall_cmd, shell=True, check=True)
         
         # Backup Queue operations using redis-cli
-        queue_cmd = f"redis-cli -h {redis_host} -p {redis_port} --scan | while read key; do echo \"Queue: $key: $(redis-cli -h {redis_host} -p {redis_port} LRANGE \"$key\" 0 -1 2>/dev/null)\"; done > {queue_filepath}"
+        queue_cmd = f"redis-cli -h {redis_host} -p {redis_port} --scan | while read key; do result=$(redis-cli -h {redis_host} -p {redis_port} LRANGE \"$key\" 0 -1 2>/dev/null); [ -n \"$result\" ] && echo \"Queue: $key: $result\"; done > {queue_filepath}"
         subprocess.run(queue_cmd, shell=True, check=True)
         
         # Add headers to the files
