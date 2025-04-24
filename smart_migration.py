@@ -1772,6 +1772,7 @@ def message_slack(message):
     req.add_header('Content-Type', 'application/json')  # Set the Content-Type header
     print(f"Headers Added")
     try:
+        print('indide try')
         with urlopen(req) as response:
             print('response', response)
             status_code = response.status
