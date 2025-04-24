@@ -1056,6 +1056,7 @@ def kill_migration_processes(*args, **kwargs) -> tuple[bool, str]:
             for line in lines:
                 if process in line and 'grep' not in line:
                     pid = line.split()[1]  # Get the PID
+                    print('pid', pid)
                     subprocess.run(['kill', '-15', pid])
                     killed.append(f"{process} (PID: {pid})")
         
