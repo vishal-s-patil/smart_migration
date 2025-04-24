@@ -696,6 +696,48 @@ def identify_panels(text: str, llm: ChatGoogleGenerativeAI) -> list[str]:
         print(f"An error occurred during panel identification: {e}")
         return []
 
+
+def identify_methods(text: str, llm: ChatGoogleGenerativeAI) -> list[str]:
+    """
+    Identifies and returns methods from the given text.
+    Methods can be comma-separated or line-separated.
+    Uses the provided LLM to extract and refine the method list.
+
+    Args:
+        text: The input text containing potential panel information.
+        llm: An initialized Langchain ChatGoogleGenerativeAI model.
+
+    Returns:
+        A list of identified method names.
+    """
+    try:
+        prompt = f"""You are an expert in identifying distinct methods from text.
+        Given the following text, identify all the individual method names.
+        Methods can be separated by commas or appear on separate lines.
+
+        Text:
+        \"{text}\"
+
+        Return the identified methods as a comma-separated list."""
+
+        response = llm.invoke(prompt)
+        extracted_methods_str = response.content
+
+        # Split the extracted string by comma and then strip whitespace
+        methods = [method.strip() for method in extracted_methods_str.split(',')]
+
+        # Further refine by splitting by newline in case the LLM included them
+        refined_methods = []
+        for method in methods:
+            refined_methods.extend([m.strip() for m in method.split('\n') if m.strip()])
+
+        # Remove any empty strings that might have resulted from splitting
+        return [method for method in refined_methods if method]
+
+    except Exception as e:
+        print(f"An error occurred during method identification: {e}")
+        return []
+
 # OTHER HELPER FUNCTIONS
 def create_panels_file(text: list, *args, **kwargs) -> tuple[bool, str]:
     """
@@ -1066,6 +1108,49 @@ def start_producer_processes(*args, **kwargs) -> tuple[bool, str]:
     except Exception as e:
         return False, f"Failed to start producer process: {str(e)}"
 
+
+def start_producer_processes_for_specific_methods(text: str, *args, **kwargs) -> tuple[bool, str]:
+    """
+    Starts producer process and verifies its status for specific methods.
+    
+    Args:
+        text (str): Text to start producer for
+    Returns:
+        tuple: (success: bool, message: str)
+    """
+    try:
+        methods = identify_methods(text)
+        script = 'run_producer.py'
+        cmd = [
+            'python3',
+            os.path.join(BASE_DIR, script),
+            os.path.join(BASE_DIR, 'logs', RUN_PRODUCER_LOG),
+            '--methods',
+            ','.join(methods)
+        ]
+        subprocess.Popen(cmd)
+        
+        time.sleep(2)  # Give process time to start
+        
+        # Check process status
+        result = subprocess.run(
+            f'ps -eaf | grep {script}',
+            shell=True,
+            capture_output=True,
+            text=True
+        )
+        
+        # Count actual processes (excluding grep itself)
+        process_lines = [line for line in result.stdout.splitlines() if script in line and 'grep' not in line]
+        
+        if len(process_lines) == 1:
+            return True, "Successfully started producer process\n" + result.stdout
+        else:
+            return False, f"Expected 1 producer process but found {len(process_lines)}"
+            
+    except Exception as e:
+        return False, f"Failed to start producer process: {str(e)}"
+
 def start_consumer_processes(*args, **kwargs) -> tuple[bool, str]:
     """
     Starts consumer process and verifies its status.
@@ -1105,6 +1190,51 @@ def start_consumer_processes(*args, **kwargs) -> tuple[bool, str]:
             
     except Exception as e:
         return False, f"Failed to start consumer process: {str(e)}"
+
+
+def start_consumer_processes_for_specific_methods(text: str, *args, **kwargs) -> tuple[bool, str]:
+    """
+    Starts consumer process and verifies its status for specific methods.
+    
+    Args:
+        text (str): Text to start consumer for
+    
+    Returns:
+        tuple: (success: bool, message: str)
+    """
+    try:
+        methods = identify_methods(text)
+        script = 'run_consumer.py'
+        cmd = [
+            'python3',
+            os.path.join(BASE_DIR, script),
+            os.path.join(BASE_DIR, 'logs', RUN_CONSUMER_LOG),
+            '--methods',
+            ','.join(methods)
+        ]
+        subprocess.Popen(cmd)
+        
+        time.sleep(2)  # Give process time to start
+        
+        # Check process status
+        result = subprocess.run(
+            f'ps -eaf | grep {script}',
+            shell=True,
+            capture_output=True,
+            text=True
+        )
+        
+        # Count actual processes (excluding grep itself)
+        process_lines = [line for line in result.stdout.splitlines() if script in line and 'grep' not in line]
+        
+        if len(process_lines) == 1:
+            return True, "Successfully started consumer process\n" + result.stdout
+        else:
+            return False, f"Expected 1 consumer process but found {len(process_lines)}"
+            
+    except Exception as e:
+        return False, f"Failed to start consumer process: {str(e)}"
+
 
 def start_kill_consumer_processes(*args, **kwargs) -> tuple[bool, str]:
     """
@@ -1367,6 +1497,9 @@ tools = [
     Tool.from_function(func=start_kill_consumer_processes, name="start_kill_consumer_processes", description="Starts the kill_consumer.py script which kills the consumer processes if the migration is completed for the respective method."),
     Tool.from_function(func=push_panels_info_to_redis, name="push_panels_info_to_redis", description="Runs the push_panels_info_to_redis.py script which pushes the panels info to Redis."),
     Tool.from_function(func=run_health_check, name="run_health_check", description="Runs the health_check.py script and returns the result."),
+    Tool.from_function(func=read_property_file, name="read_property_file", description="Reads or updates the property file and returns the result."),
+    Tool.from_function(func=start_producer_processes_for_specific_methods, name="start_producer_processes_for_specific_methods", description="Starts the run_producer.py script which start the producer processes for specific methods. This function expects a text input with the methods to start the producer for."),
+    Tool.from_function(func=start_consumer_processes_for_specific_methods, name="start_consumer_processes_for_specific_methods", description="Starts the run_consumer.py script which start the consumer processes for specific methods. This function expects a text input with the methods to start the consumer for."),
 ]
     
 prompt = hub.pull("hwchase17/react")
