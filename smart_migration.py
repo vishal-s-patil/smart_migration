@@ -462,6 +462,8 @@ def delete_all_kafka_topics(*args, **kwargs):
             
         # Delete all topics
         admin_client.delete_topics(topics)
+        # commit the changes
+        admin_client.commit()
         admin_client.close()
         return True, f"Successfully deleted {len(topics)} topics"
     except Exception as e:
