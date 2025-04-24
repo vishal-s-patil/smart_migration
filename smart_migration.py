@@ -1279,7 +1279,7 @@ def validate_time_series_collections(*args, **kwargs) -> tuple[bool, str]:
     except Exception as e:
         return False, f"Failed to validate time series indexes: {str(e)}"
 
-def create_time_series_collections() -> tuple[bool, str]:
+def create_time_series_collections(*args, **kwargs) -> tuple[bool, str]:
     """
     Creates time series collections by running create_timeseries_dbs.py script
     and verifies the output log for errors.
@@ -1361,7 +1361,7 @@ tools = [
     Tool.from_function(func=pre_migration_check, name="pre_migration_check", description="Performs pre-migration checks and preparation for migration: 1. Health check 2. Redis cleanup and verification 3. Kafka cleanup, topic creation and validation 4. Log folder cleanup 5. Time series collections validation 6. Push panels to Redis 7. Check for running migration processes 8. Final health check"),
     Tool.from_function(func=start_migration_processes, name="start_migration_processes", description="Starts migration processes and verifies their status and can be used to add more processes or clients to the migration: 1. run_producer.py 2. run_consumer.py 3. kill_consumer.py"),
     Tool.from_function(func=check_migration_concurrency, name="check_migration_concurrency", description="Checks the concurrency of the migration by counting running processes: 1. run_producer.py 2. run_consumer.py"),
-    Tool.from_function(func=validate_time_series_collections, name="validate_time_series_collections", description="Validates time series indexes by running ts_mongo_ind_index_validation.py and checks the output log for errors."),
+    Tool.from_function(func=validate_time_series_collections, name="validate_time_series_collections", description="Validates time series indexes by running ts_mongo_ind_index_validation.py and checks the output log for errors.NOTE: This does not create the time series collections, it only validates them."),
     Tool.from_function(func=create_time_series_collections, name="create_time_series_collections", description="Creates time series collections by running create_timeseries_dbs.py script and verifies the output log for errors."),
     Tool.from_function(func=start_producer_processes, name="start_producer_processes", description="Starts the run_producer.py script which start the producer processes for all methods."),
     Tool.from_function(func=start_consumer_processes, name="start_consumer_processes", description="Starts the run_consumer.py script which start the consumer processes for all methods."),
