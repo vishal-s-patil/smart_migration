@@ -60,25 +60,6 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
-def log_action(action: str, command: str = "", level: str = "INFO"):
-    """
-    Logs an action with the specified format.
-    
-    Args:
-        action: The action being performed
-        command: The command being executed (if any)
-        level: The log level (INFO, WARNING, ERROR)
-    """
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    log_message = f"{timestamp} [{level}] [Function_Name:{inspect.currentframe().f_back.f_code.co_name}] [Action:{action}] [Command:{command}]"
-    
-    if level == "ERROR":
-        logging.error(log_message)
-    elif level == "WARNING":
-        logging.warning(log_message)
-    else:
-        logging.info(log_message)
-
 def read_property_file(*args, **kwargs) -> tuple[bool, dict]:
     """
     Reads the property file and returns its contents as a dictionary.
