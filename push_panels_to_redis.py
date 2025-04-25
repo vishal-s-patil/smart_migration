@@ -167,6 +167,7 @@ def push_panel_to_redis(clients, is_both):
             try:
                 panel_name = client
                 start_uid = 1
+                end_uid = None
                 if max_uid is None:
                     end_uid = int(max_uid + max_uid * 0.1)
                     continue
