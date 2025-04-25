@@ -638,13 +638,18 @@ def clear_kafka_directories(*args, **kwargs):
         zookeeper_dir = '/data/zookeeper'
         
         # Remove all files including hidden ones using os.system
-        kafka_clear_cmd = f"sudo rm -rf {kafka_logs_dir}/* {kafka_logs_dir}/.*"
-        zookeeper_clear_cmd = f"sudo rm -rf {zookeeper_dir}/* {zookeeper_dir}/.*"
+        # Ignore the "refusing to remove . or .." messages as they are not errors
+        kafka_clear_cmd = f"sudo rm -rf {kafka_logs_dir}/* {kafka_logs_dir}/.* 2>/dev/null"
+        zookeeper_clear_cmd = f"sudo rm -rf {zookeeper_dir}/* {zookeeper_dir}/.* 2>/dev/null"
         
         kafka_clear_status = os.system(kafka_clear_cmd)
         zookeeper_clear_status = os.system(zookeeper_clear_cmd)
         
-        if kafka_clear_status != 0 or zookeeper_clear_status != 0:
+        # Check if directories are empty (excluding . and ..)
+        kafka_empty = len(os.listdir(kafka_logs_dir)) <= 2  # . and .. are always present
+        zookeeper_empty = len(os.listdir(zookeeper_dir)) <= 2
+        
+        if not kafka_empty or not zookeeper_empty:
             return False, "Failed to clear Kafka or Zookeeper directories"
         
         # Start services
