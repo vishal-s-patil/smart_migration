@@ -153,13 +153,10 @@ def start_redis(*args, **kwargs):
     """
     try:
         command = ['systemctl', 'start', 'redis']
-        log_action("Starting Redis server", " ".join(command))
         subprocess.run(command)
-        log_action("Redis server started successfully")
         return True, "Redis server started successfully"
     except Exception as e:
         error_msg = f"Failed to start Redis: {str(e)}"
-        log_action(error_msg, level="ERROR")
         return False, error_msg
 
 def stop_redis(*args, **kwargs):
@@ -584,7 +581,6 @@ def run_create_topics(*args, **kwargs):
     """
     try:
         command = ['python3', 'create_topics.py', PANELS_FILE_PATH, str(NUM_PARTITIONS)]
-        print(command)
         
         with open(TOPIC_CREATION_LOG, 'w') as log_file:
             result = subprocess.run(
