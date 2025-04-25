@@ -258,6 +258,7 @@ if __name__ == "__main__":
                 continue
 
         clients = [client for client in clients if client[1] is not None]
+        print(clients)
         
         log_message("INFO", {"msg": f"starting to push {len(clients)} panels to redis"})
         push_panel_to_redis(clients, is_both)
