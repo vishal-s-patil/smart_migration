@@ -186,6 +186,7 @@ def push_panel_to_redis(clients, is_both):
                     for consumer_method in consumer_methods:
                         # print(consumer_method + "_queue", str(panel_data))
                         r.rpush(consumer_method + "_queue", str(panel_data))
+                    log_message("INFO", {"db": client, "msg": f"successfully pushed"})
                 elif is_both == 2:
                     for producer_method in producer_methods:
                         # print(producer_method + "_queue", str(panel_data))
