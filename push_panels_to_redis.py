@@ -197,7 +197,7 @@ def push_panel_to_redis(clients, is_both):
                         r.rpush(consumer_method + "_queue", str(panel_data))
                 cnt += 1
             except Exception as e:
-                log_message("ERROR", {"msg": "Error while pushing panel to redis", "err": e})
+                log_message("ERROR", {"db": client, "msg": "Error while pushing panel to redis", "err": e})
                 continue
 
         log_message("INFO", {"msg": f"pushed {cnt} panels to redis"})
