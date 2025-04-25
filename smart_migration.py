@@ -637,22 +637,25 @@ def clear_kafka_directories(*args, **kwargs):
         kafka_logs_dir = '/data/kafka-logs'
         zookeeper_dir = '/data/zookeeper'
         
-        # Remove all files including hidden ones
-        subprocess.run(['sudo', 'rm', '-rf', f'{kafka_logs_dir}/*', f'{kafka_logs_dir}/.*'], check=True)
-        subprocess.run(['sudo', 'rm', '-rf', f'{zookeeper_dir}/*', f'{zookeeper_dir}/.*'], check=True)
+        # Remove all files including hidden ones using os.system
+        kafka_clear_cmd = f"sudo rm -rf {kafka_logs_dir}/* {kafka_logs_dir}/.*"
+        zookeeper_clear_cmd = f"sudo rm -rf {zookeeper_dir}/* {zookeeper_dir}/.*"
+        
+        kafka_clear_status = os.system(kafka_clear_cmd)
+        zookeeper_clear_status = os.system(zookeeper_clear_cmd)
+        
+        if kafka_clear_status != 0 or zookeeper_clear_status != 0:
+            return False, "Failed to clear Kafka or Zookeeper directories"
         
         # Start services
         kafka_start_success, kafka_start_msg = start_kafka()
         zookeeper_start_success, zookeeper_start_msg = start_zookeeper()
-
         
         if not kafka_start_success or not zookeeper_start_success:
             return False, f"Failed to start services: Kafka - {kafka_start_msg}, Zookeeper - {zookeeper_start_msg}"
 
         return True, "Successfully cleared Kafka and Zookeeper directories and restarted services"
         
-    except subprocess.CalledProcessError as e:
-        return False, f"Failed to clear directories: {str(e)}"
     except Exception as e:
         return False, f"An unexpected error occurred: {str(e)}"
 
