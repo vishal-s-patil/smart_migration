@@ -183,12 +183,10 @@ def push_panel_to_redis(clients, is_both):
                 if is_both == 1:
                     for producer_method in producer_methods:
                         # print(producer_method + "_queue", str(panel_data))
-                        print('producer_method', producer_method, str(panel_data))
                         r.rpush(producer_method + "_queue", str(panel_data))
                 
                     for consumer_method in consumer_methods:
                         # print(consumer_method + "_queue", str(panel_data))
-                        print('consumer_method', consumer_method, str(panel_data))
                         r.rpush(consumer_method + "_queue", str(panel_data))
                     log_message("INFO", {"db": client, "msg": f"successfully pushed"})
                 elif is_both == 2:
@@ -252,15 +250,14 @@ if __name__ == "__main__":
             log_message("ERROR", {"mag": "Error executing shell command", "command": get_latest_max_uids_commands, "error": str(e)})
             exit()
 
-        print(clients)
         clients = [[name, int(num) if num.isdigit() else None] for name, num in clients]
-        print(clients)
         for name, num in clients:
             if num is None:
                 log_message("ERROR", {"mag": "client not found", "client": name})
                 clients.remove([name, num])
                 continue
-        print(clients)
+
+        clients = [client for client in clients if client[1] is not None]
         
         log_message("INFO", {"msg": f"starting to push {len(clients)} panels to redis"})
         push_panel_to_redis(clients, is_both)
