@@ -164,13 +164,16 @@ def push_panel_to_redis(clients, is_both):
     try:
         cnt = 0
         for client, max_uid in clients:
+            print(client, max_uid)
             try:
                 panel_name = client
                 start_uid = 1
                 end_uid = None
+                
                 if max_uid is None:
-                    end_uid = int(max_uid + max_uid * 0.1)
                     continue
+                else:
+                    end_uid = int(max_uid + max_uid * 0.1)
                     
                 # start_uid = int(start_uid) if start_uid.isdigit() else None
                 # end_uid = int(end_uid) if end_uid.isdigit() else None
