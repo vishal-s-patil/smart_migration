@@ -186,6 +186,8 @@ def check_kafka_connectivity(
             topics = admin_client.list_topics()
             if test_topic in topics:
                 admin_client.delete_topics([test_topic])
+            else:
+                logger.info(f"Topic {test_topic} does not exist to delete finally.")
             if admin_client:
                 try:
                     admin_client.close()
