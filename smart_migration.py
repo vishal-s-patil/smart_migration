@@ -14,7 +14,6 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from kafka.admin import KafkaAdminClient
 from health_check_module import health_check
 import shutil
-import logging
 from datetime import datetime
 import time
 import json
@@ -52,13 +51,6 @@ llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash-001", google_api_key=os.get
 
 config_dict = {}
 
-# Add logging configuration
-logging.basicConfig(
-    filename=LOG_PATH,
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] [Function_Name:%(funcName)s] [Action:%(message)s] [Command:%(command)s]',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
 
 def read_property_file(*args, **kwargs) -> tuple[bool, dict]:
     """
