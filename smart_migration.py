@@ -730,7 +730,7 @@ def stop_zookeeper(*args, **kwargs):
         return False, f"An unexpected error occurred while stopping Zookeeper: {str(e)}"
 
 # LLM 
-def identify_panels(text: str) -> list[str]:
+def identify_panels(text: str, *args, **kwargs) -> list[str]:
     """
     Identifies and returns panels from the given text.
     Panels can be comma-separated or line-separated.
