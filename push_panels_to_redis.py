@@ -248,6 +248,7 @@ if __name__ == "__main__":
             log_message("ERROR", {"mag": "Error executing shell command", "command": get_latest_max_uids_commands, "error": str(e)})
             exit()
 
+        print(clients)
         clients = [[name, int(num) if num.isdigit() else None] for name, num in clients]
         for name, num in clients:
             if num is None:
@@ -256,7 +257,6 @@ if __name__ == "__main__":
                 continue
         
         log_message("INFO", {"msg": f"starting to push {len(clients)} panels to redis"})
-        print(clients)
         push_panel_to_redis(clients, is_both)
 
         # for producer_method in producer_methods: # consumer_methods:
