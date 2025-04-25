@@ -167,7 +167,9 @@ def push_panel_to_redis(clients, is_both):
             try:
                 panel_name = client
                 start_uid = 1
-                end_uid = int(max_uid + max_uid * 0.1)
+                if max_uid is not None:
+                    end_uid = int(max_uid + max_uid * 0.1)
+                    continue
                     
                 # start_uid = int(start_uid) if start_uid.isdigit() else None
                 # end_uid = int(end_uid) if end_uid.isdigit() else None
@@ -252,11 +254,13 @@ if __name__ == "__main__":
 
         print(clients)
         clients = [[name, int(num) if num.isdigit() else None] for name, num in clients]
+        print(clients)
         for name, num in clients:
             if num is None:
                 log_message("ERROR", {"mag": "client not found", "client": name})
                 clients.remove([name, num])
                 continue
+        print(clients)
         
         log_message("INFO", {"msg": f"starting to push {len(clients)} panels to redis"})
         push_panel_to_redis(clients, is_both)
