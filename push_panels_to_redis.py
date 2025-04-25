@@ -167,7 +167,7 @@ def push_panel_to_redis(clients, is_both):
             try:
                 panel_name = client
                 start_uid = 1
-                if max_uid is not None:
+                if max_uid is None:
                     end_uid = int(max_uid + max_uid * 0.1)
                     continue
                     
@@ -261,6 +261,7 @@ if __name__ == "__main__":
         print(clients)
         
         log_message("INFO", {"msg": f"starting to push {len(clients)} panels to redis"})
+        
         push_panel_to_redis(clients, is_both)
 
         # for producer_method in producer_methods: # consumer_methods:
