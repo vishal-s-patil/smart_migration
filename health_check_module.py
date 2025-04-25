@@ -182,7 +182,9 @@ def check_kafka_connectivity(
             return False
         finally:
             # delete the test topic
-            admin_client.delete_topics([test_topic])
+            # delete only if the topic exists
+            if admin_client.list_topics().topics.get(test_topic):
+                admin_client.delete_topics([test_topic])
             if admin_client:
                 try:
                     admin_client.close()
