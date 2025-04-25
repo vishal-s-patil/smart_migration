@@ -164,36 +164,40 @@ def push_panel_to_redis(clients, is_both):
     try:
         cnt = 0
         for client, max_uid in clients:
-            panel_name = client
-            start_uid = 1
-            end_uid = int(max_uid + max_uid * 0.1)
-            
-            # start_uid = int(start_uid) if start_uid.isdigit() else None
-            # end_uid = int(end_uid) if end_uid.isdigit() else None
+            try:
+                panel_name = client
+                start_uid = 1
+                end_uid = int(max_uid + max_uid * 0.1)
+                    
+                # start_uid = int(start_uid) if start_uid.isdigit() else None
+                # end_uid = int(end_uid) if end_uid.isdigit() else None
 
-            panel_data = {"panel_name": panel_name}
-            if start_uid is not None:
-                panel_data["start_uid"] = start_uid
-            if end_uid is not None:
-                panel_data["end_uid"] = end_uid
-            
-            if is_both == 1:
-                for producer_method in producer_methods:
-                    # print(producer_method + "_queue", str(panel_data))
-                    r.rpush(producer_method + "_queue", str(panel_data))
-            
-                for consumer_method in consumer_methods:
-                    # print(consumer_method + "_queue", str(panel_data))
-                    r.rpush(consumer_method + "_queue", str(panel_data))
-            elif is_both == 2:
-                for producer_method in producer_methods:
-                    # print(producer_method + "_queue", str(panel_data))
-                    r.rpush(producer_method + "_queue", str(panel_data))
-            else:
-                for consumer_method in consumer_methods:
-                    # print(consumer_method + "_queue", str(panel_data))
-                    r.rpush(consumer_method + "_queue", str(panel_data))
-            cnt += 1
+                panel_data = {"panel_name": panel_name}
+                if start_uid is not None:
+                    panel_data["start_uid"] = start_uid
+                if end_uid is not None:
+                    panel_data["end_uid"] = end_uid
+                
+                if is_both == 1:
+                    for producer_method in producer_methods:
+                        # print(producer_method + "_queue", str(panel_data))
+                        r.rpush(producer_method + "_queue", str(panel_data))
+                
+                    for consumer_method in consumer_methods:
+                        # print(consumer_method + "_queue", str(panel_data))
+                        r.rpush(consumer_method + "_queue", str(panel_data))
+                elif is_both == 2:
+                    for producer_method in producer_methods:
+                        # print(producer_method + "_queue", str(panel_data))
+                        r.rpush(producer_method + "_queue", str(panel_data))
+                else:
+                    for consumer_method in consumer_methods:
+                        # print(consumer_method + "_queue", str(panel_data))
+                        r.rpush(consumer_method + "_queue", str(panel_data))
+                cnt += 1
+            except Exception as e:
+                log_message("ERROR", {"msg": "Error while pushing panel to redis", "err": e})
+                continue
 
         log_message("INFO", {"msg": f"pushed {cnt} panels to redis"})
     except Exception as e:
