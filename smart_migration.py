@@ -741,7 +741,7 @@ def identify_panels(text: str, *args, **kwargs) -> list[str]:
         return []
 
 
-def identify_panels_and_cids(text: str, llm: ChatGoogleGenerativeAI) -> list[str]:
+def identify_panels_and_cids(text: str, *args, **kwargs) -> list[str]:
     """
     Identifies and returns panels and cids from the given text.
     Panels and cids can be given in a csv format or python list of tuples format.
