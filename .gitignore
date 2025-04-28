@@ -4,6 +4,10 @@ __pycache__/
 *$py.class
 
 *.log
+temp.csv
+test.csv
+test
+test.py
 
 # C extensions
 *.so
