@@ -123,13 +123,32 @@ def create_ts_dbs_collections(*args, **kwargs):
 def start_redis(*args, **kwargs):
     """
     Starts the Redis server using systemctl.
+    
+    Args:
+        *args: Variable length argument list
+        **kwargs: Arbitrary keyword arguments
+    
+    Returns:
+        tuple: (success: bool, message: str)
+            - success: True if Redis started successfully, False otherwise
+            - message: Status message describing the result
     """
     try:
         command = ['systemctl', 'start', 'redis']
-        subprocess.run(command)
-        return True, "Redis server started successfully"
+        print(f"Starting Redis server with command: {' '.join(command)}")
+        result = subprocess.run(command, capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            print("Redis server started successfully")
+            return True, "Redis server started successfully"
+        else:
+            error_msg = f"Failed to start Redis: {result.stderr}"
+            print(error_msg)
+            return False, error_msg
+            
     except Exception as e:
         error_msg = f"Failed to start Redis: {str(e)}"
+        print(error_msg)
         return False, error_msg
 
 def stop_redis(*args, **kwargs):
