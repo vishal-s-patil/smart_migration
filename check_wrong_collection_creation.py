@@ -84,7 +84,7 @@ def check_collections_in_databases(client: pymongo.MongoClient, collection_list:
     database_list = client.list_database_names()
     
     # Skip system databases
-    system_dbs = ['admin', 'local', 'config']
+    system_dbs = ['admin', 'local', 'config', 'test_panel']
     database_list = [db for db in database_list if db not in system_dbs]
     
     for db_name in database_list:
