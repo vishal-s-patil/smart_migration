@@ -1844,40 +1844,50 @@ def api_smart_query():
         JSON response with the agent's response or error message
     """
     try:
+        # Check if this is a duplicate request by checking the timestamp
+        current_time = time.time()
+        if hasattr(api_smart_query, 'last_request_time') and \
+           current_time - api_smart_query.last_request_time < 2:  # 2 second threshold
+            return jsonify({
+                "success": False,
+                "message": "Duplicate request ignored"
+            }), 429
+        
+        api_smart_query.last_request_time = current_time
+        
         event = request.get_json()
         body = json.loads(event['body'])
         
-    
+        try:
+            query = re.sub(r'<[^>]*>', '', body['event']['text'])
+        except Exception as e:
+            message_slack(f"Invalid request body: {e}")
+            return jsonify({
+                "success": False,
+                "message": "Invalid request body"
+            }), 400
+
+        success, result = process_smart_query(query)
+        
+        message_slack(result)
+
+        if success:
+            return jsonify({
+                "success": True,
+                "data": result
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "message": result
+            })
+            
     except Exception as e:
         message_slack(f"Invalid request body: {e}")
         return jsonify({
             "success": False,
             "message": "Invalid request body"
         }), 400
-    
-    try:
-        query = re.sub(r'<[^>]*>', '', body['event']['text'])
-    except Exception as e:
-        message_slack(f"Invalid request body: {e}")
-        return jsonify({
-            "success": False,
-            "message": "Invalid request body"
-        }), 400
-
-    success, result = process_smart_query(query)
-    
-    message_slack(result)
-
-    if success:
-        return jsonify({
-            "success": True,
-            "data": result
-        })
-    else:
-        return jsonify({
-            "success": False,
-            "message": result
-        })
 
 # KAFKA
 @app.route('/kafka/topics/count', methods=['GET'])
