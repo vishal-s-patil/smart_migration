@@ -132,8 +132,12 @@ def main():
         # if results is not empty, send slack alert
         if src_results:
             send_slack_alert("Mongo 5", "Found collections in the following databases:\n" + str(src_results))
+        else:
+            logger.info("No collections found in Mongo 5")
         if dst_results:
             send_slack_alert("Mongo 7", "Found collections in the following databases:\n" + str(dst_results))
+        else:
+            logger.info("No collections found in Mongo 7")
 
     except Exception as e:
         logger.error(f"Error: {str(e)}")
