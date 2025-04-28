@@ -1847,7 +1847,7 @@ def api_smart_query():
         # Check if this is a duplicate request by checking the timestamp
         current_time = time.time()
         if hasattr(api_smart_query, 'last_request_time') and \
-           current_time - api_smart_query.last_request_time < 2:  # 2 second threshold
+           current_time - api_smart_query.last_request_time < 5:  # 5 second threshold
             return jsonify({
                 "success": False,
                 "message": "Duplicate request ignored"
@@ -2097,5 +2097,5 @@ def api_create_ts_dbs_collections():
         }), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=9001)
+    app.run(debug=False, host='0.0.0.0', port=9001)
 
