@@ -306,7 +306,7 @@ def get_total_keys(*args, **kwargs):
     except Exception as e:
         return False, f"Failed to get total keys: {str(e)}"
 
-def get_panels_length(*args, **kwargs):
+def get_migration_status(*args, **kwargs):
     """
     Gets the length of all queues starting with 'read' and 'write'.
     
@@ -1644,7 +1644,7 @@ def format(kafka_status_output):
         message += f"```\n{cleaned_output}\n```"
         return message
 
-def get_migration_status(*args, **kwargs) -> tuple[bool, str]:
+def get_running_methods_status(*args, **kwargs) -> tuple[bool, str]:
     """
     Get the status of the migration in a table format.
     """
@@ -1736,7 +1736,6 @@ tools = [
     Tool.from_function(func=delete_specific_key, name="delete_specific_key", description="Deletes a specific Redis key."),
     Tool.from_function(func=get_methods_count_form_redis, name="get_methods_count_form_redis", description="Gets the count of redis keys referred as methods, starting with 'read' and 'write'"),
     Tool.from_function(func=get_total_keys, name="get_total_keys", description="Gets the total number of keys in Redis."),
-    Tool.from_function(func=get_panels_length, name="get_panels_length", description="Get the length of the panels list in Redis"),
     Tool.from_function(func=check_redis_status, name="check_redis_status", description="Checks the status of the Redis server."),
     Tool.from_function(func=get_kafka_topics_count, name="get_kafka_topics_count", description="Gets the count of Kafka topics."),
     Tool.from_function(func=get_kafka_groups_count, name="get_kafka_groups_count", description="Gets the count of Kafka consumer groups."),
@@ -1773,8 +1772,10 @@ tools = [
     Tool.from_function(func=create_ts_dbs_collections, name="create_ts_dbs_collections", description="Reads the csv containing the panels and cids and creates the time series databases or if databases already exist, it creates the collections."),
     Tool.from_function(func=create_panels_cid_csv_file, name="create_panels_cid_csv_file", description="Creates a csv file containing the panels and cids."),
     
+
+    Tool.from_function(func=get_migration_status, name="get_migration_status", description="get the status of the migration"),
     Tool.from_function(func=get_migrating_panels, name="get_migrating_panels", description="Gets the panels that are currently being migrated."),
-    Tool.from_function(func=get_migration_status, name="get_migration_status", description="Get the status of the migration in a table format."),
+    Tool.from_function(func=get_running_methods_status, name="get_running_methods_status", description="Get running methods status."),
 ]
 
 # custom_prompt_template = """"""
