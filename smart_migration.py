@@ -1030,7 +1030,7 @@ def check_migration_processes(*args, **kwargs) -> tuple[bool, dict]:
             )
             print(result.stdout)
             # If grep finds itself and the process, count > 1
-            processes[process] = len(result.stdout.splitlines()) > 1
+            processes[process] = len(result.stdout.splitlines()) >= 1
             
         # Check for java write process
         result = subprocess.run(
@@ -1039,7 +1039,7 @@ def check_migration_processes(*args, **kwargs) -> tuple[bool, dict]:
             text=True
         )
         print(result.stdout)
-        processes['java_write'] = len(result.stdout.splitlines()) > 1
+        processes['java_write'] = len(result.stdout.splitlines()) >= 1
         
         # Check for java read process
         result = subprocess.run(
@@ -1048,7 +1048,7 @@ def check_migration_processes(*args, **kwargs) -> tuple[bool, dict]:
             text=True
         )
         print(result.stdout)
-        processes['java_read'] = len(result.stdout.splitlines()) > 1
+        processes['java_read'] = len(result.stdout.splitlines()) >= 1
             
         return True, processes
     except Exception as e:
