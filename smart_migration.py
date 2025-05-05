@@ -1625,6 +1625,25 @@ def get_kafka_status(*args, **kwargs) -> tuple[bool, str]:
     except Exception as e:
         return False, f"An unexpected error occurred: {e}"
 
+def format(kafka_status_output):
+    """
+    Formats the raw Kafka status output into a more readable message.
+
+    Args:
+        kafka_status_output (str): The raw string output from the Kafka status check.
+
+    Returns:
+        str or None: The formatted message string if data is found, otherwise None.
+    """
+    if "No data found" in kafka_status_output:
+        return None
+    else:
+        # Remove the initial "(True, " and the trailing ")"
+        cleaned_output = kafka_status_output.lstrip("(True, ").rstrip(")")
+        message = "\nKafka Status:\n"
+        message += f"```\n{cleaned_output}\n```"
+        return message
+
 def get_migration_status(*args, **kwargs) -> tuple[bool, str]:
     """
     Get the status of the migration in a table format.
@@ -1633,26 +1652,15 @@ def get_migration_status(*args, **kwargs) -> tuple[bool, str]:
         total_pending_count = 0
         ENV = config_dict.get('env', 'dev')
 
-        redis_table_header = f"Env: {ENV}\n"
-        redis_table_header += "+---------------------------------------------------------+--------------------+\n"
-        redis_table_header += "|                                         Queue Name                                          | Pending Count        |\n"
-        redis_table_header += "+---------------------------------------------------------+--------------------+\n"
-
+        
         kafka_status_output = get_kafka_status()
         message = ""
 
-        # Only send if there's at least one non-zero queue
-        if total_pending_count > 0:
-            redis_table_footer = "+---------------------------------------------------------+--------------------+\n"
-            message += f"Redis Status:\n```{redis_table_header}{redis_table_rows}{redis_table_footer}```\n"
-        else:
-            print("All queue lengths are zero.")
-
         if "No data found" not in kafka_status_output:
             message += "\nKafka Status:\n"
-            message += f"```{kafka_status_output}```" #append the kafka output
+            message += f"```{kafka_status_output}```" 
 
-        return True, message
+        return True, format(kafka_status_output)
 
     except Exception as e:
         return False, f"Failed to get migration status: {str(e)}"
