@@ -1660,7 +1660,7 @@ def get_migration_status(*args, **kwargs) -> tuple[bool, str]:
             message += "\nKafka Status:\n"
             message += f"```{kafka_status_output}```" 
 
-        return True, format(kafka_status_output)
+        return True, format(message)
 
     except Exception as e:
         return False, f"Failed to get migration status: {str(e)}"
