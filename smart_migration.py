@@ -1649,7 +1649,7 @@ tools = [
     Tool.from_function(func=delete_specific_key, name="delete_specific_key", description="Deletes a specific Redis key."),
     Tool.from_function(func=get_methods_count_form_redis, name="get_methods_count_form_redis", description="Gets the count of redis keys referred as methods, starting with 'read' and 'write'"),
     Tool.from_function(func=get_total_keys, name="get_total_keys", description="Gets the total number of keys in Redis."),
-    Tool.from_function(func=get_panels_length, name="get_panels_length", description="Gets the length of the panels list in Redis."),
+    Tool.from_function(func=get_panels_length, name="get_panels_length", description="Returns the status of the migration by getting the length of the panels list in Redis"),
     Tool.from_function(func=check_redis_status, name="check_redis_status", description="Checks the status of the Redis server."),
     Tool.from_function(func=get_kafka_topics_count, name="get_kafka_topics_count", description="Gets the count of Kafka topics."),
     Tool.from_function(func=get_kafka_groups_count, name="get_kafka_groups_count", description="Gets the count of Kafka consumer groups."),
