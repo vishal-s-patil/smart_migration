@@ -1627,7 +1627,7 @@ def get_kafka_status(*args, **kwargs) -> tuple[bool, str]:
 
 def format(kafka_status_output):
     """
-    Formats the raw Kafka status output into a more readable message.
+    Formats the raw Kafka status output into a human-readable message for Slack.
 
     Args:
         kafka_status_output (str): The raw string output from the Kafka status check.
@@ -1640,9 +1640,32 @@ def format(kafka_status_output):
     else:
         # Remove the initial "(True, " and the trailing ")"
         cleaned_output = kafka_status_output.lstrip("(True, ").rstrip(")")
-        message = "\nKafka Status:\n"
-        message += f"```\n{cleaned_output}\n```"
+        lines = cleaned_output.strip().split('\n')
+        if not lines or len(lines) < 2:
+            return "Could not parse Kafka status."
+
+        header = [h.strip() for h in lines[0].strip('+-').split('|')]
+        data_rows = [dict(zip(header, [d.strip() for d in row.strip().split('|')]))
+                     for row in lines[2:] if row.strip()]
+
+        if not data_rows:
+            return "No running Kafka consumer groups found."
+
+        message = "*Kafka Consumer Group Status:*\n```"
+        for row in data_rows:
+            message += f"• *Group Name:* {row['group_name']}\n"
+            message += f"  • Status: {row['status']}\n"
+            message += f"  • Update Time: {row['update_time']}\n"
+            message += f"  • Current Producer Offset: {row['current_producer_offset']}\n"
+            message += f"  • Current Consumer Offset: {row['current_consumer_offset']}\n"
+            message += f"  • Lag (Previous): {row['prev_lag']}\n"
+            message += f"  • *Current Lag:* {row['current_lag']}\n"
+            message += f"  • Time Difference (mins): {row['time_diff_mins']}\n"
+            message += f"  • Consumed per Hour: {row['consumed_per_hour']}\n"
+            message += f"  • Produced per Hour: {row['produced_per_hour']}\n\n"
+        message += "```"
         return message
+
 
 def get_running_methods_status(*args, **kwargs) -> tuple[bool, str]:
     """
