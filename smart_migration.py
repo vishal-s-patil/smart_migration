@@ -1028,6 +1028,7 @@ def check_migration_processes(*args, **kwargs) -> tuple[bool, dict]:
                 capture_output=True,
                 text=True
             )
+            print(result.stdout)
             # If grep finds itself and the process, count > 1
             processes[process] = len(result.stdout.splitlines()) > 1
             
@@ -1037,6 +1038,7 @@ def check_migration_processes(*args, **kwargs) -> tuple[bool, dict]:
             capture_output=True,
             text=True
         )
+        print(result.stdout)
         processes['java_write'] = len(result.stdout.splitlines()) > 1
         
         # Check for java read process
@@ -1045,6 +1047,7 @@ def check_migration_processes(*args, **kwargs) -> tuple[bool, dict]:
             capture_output=True,
             text=True
         )
+        print(result.stdout)
         processes['java_read'] = len(result.stdout.splitlines()) > 1
             
         return True, processes
