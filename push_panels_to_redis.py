@@ -153,18 +153,21 @@ except Exception as e:
     print(f'Error while connecting to redis: %s' % e)
     exit()
 
-producer_methods = ["readUserAttributes", "readAnonUserAttributes", "readDisableUserAttributes", "readEngagementEventsWithMetaKey", "readAnonEngagementEventsWithMetaKey", "readDisableEngagementEventsWithMetaKey", "readUserDetailsWithMetaKey", "readAnonUserDetailsWithMetaKey", "readDisableUserDetailsWithMetaKey"]
-consumer_methods = ["writeUserAttributes", "writeAnonUserAttributes", "writeDisableUserAttributes", "writeEngagementEventsToUserEvents", "writeAnonEngagementEventsToAnonUserEvents", "writeDisableEngagementEventsToDisabledUserEvents", "writeUserDetailsToUserEvents", "writeAnonUserDetailsToAnonUserEvents", "writeDisableUserDetailsToDisableUserEvents"]
+producer_methods = ["readUserAttributes", "readEngagementEventsWithMetaKey", "readUserDetailsWithMetaKey"]
+anon_producer_methods = ["readAnonUserAttributes", "readAnonEngagementEventsWithMetaKey", "readAnonUserDetailsWithMetaKey"]
+disable_producer_methods = ["readDisableUserAttributes", "readDisableEngagementEventsWithMetaKey", "readDisableUserDetailsWithMetaKey"]
+consumer_methods = ["writeUserAttributes", "writeEngagementEventsToUserEvents", "writeUserDetailsToUserEvents"]
+anon_consumer_methods = ["writeAnonUserAttributes", "writeAnonEngagementEventsToAnonUserEvents", "writeAnonUserDetailsToAnonUserEvents"]
+disable_consumer_methods = ["writeDisableUserAttributes", "writeDisableEngagementEventsToDisabledUserEvents", "writeDisableUserDetailsToDisableUserEvents"]
 
 # producer_methods = ["readAnonUserAttributes", "readDisableUserAttributes", "readAnonEngagementEventsWithMetaKey", "readDisableEngagementEventsWithMetaKey", "readAnonUserDetailsWithMetaKey", "readDisableUserDetailsWithMetaKey"]
 # consumer_methods = ["writeAnonUserAttributes", "writeDisableUserAttributes", "writeAnonEngagementEventsToAnonUserEvents", "writeDisableEngagementEventsToDisabledUserEvents", "writeAnonUserDetailsToAnonUserEvents", "writeDisableUserDetailsToDisableUserEvents"]
 
 
-def push_panel_to_redis(clients, is_both):
+def push_panel_to_redis(clients, is_both, panel_type):
     try:
         cnt = 0
         for client, max_uid in clients:
-            print(client, max_uid)
             try:
                 panel_name = client
                 start_uid = 1
@@ -185,22 +188,57 @@ def push_panel_to_redis(clients, is_both):
                     panel_data["end_uid"] = end_uid
                 
                 if is_both == 1:
-                    for producer_method in producer_methods:
-                        # print(producer_method + "_queue", str(panel_data))
-                        r.rpush(producer_method + "_queue", str(panel_data))
-                
-                    for consumer_method in consumer_methods:
-                        # print(consumer_method + "_queue", str(panel_data))
-                        r.rpush(consumer_method + "_queue", str(panel_data))
+                    if panel_type == "anon":
+                        for producer_method in anon_producer_methods:
+                            # print(producer_method + "_queue", str(panel_data))
+                            r.rpush(producer_method + "_queue", str(panel_data))
+                    elif panel_type == "disable":
+                        for producer_method in disable_producer_methods:
+                            # print(producer_method + "_queue", str(panel_data))
+                            r.rpush(producer_method + "_queue", str(panel_data))
+                    else:
+                        for producer_method in producer_methods:
+                            # print(producer_method + "_queue", str(panel_data))
+                            r.rpush(producer_method + "_queue", str(panel_data))
+                    if panel_type == "anon":
+                        for consumer_method in anon_consumer_methods:
+                            # print(consumer_method + "_queue", str(panel_data))
+                            r.rpush(consumer_method + "_queue", str(panel_data))
+                    elif panel_type == "disable":
+                        for consumer_method in disable_consumer_methods:
+                            # print(consumer_method + "_queue", str(panel_data))
+                            r.rpush(consumer_method + "_queue", str(panel_data))
+                    else:
+                        for consumer_method in consumer_methods:
+                            # print(consumer_method + "_queue", str(panel_data))
+                            r.rpush(consumer_method + "_queue", str(panel_data))
                     log_message("INFO", {"db": client, "msg": f"successfully pushed"})
                 elif is_both == 2:
-                    for producer_method in producer_methods:
-                        # print(producer_method + "_queue", str(panel_data))
-                        r.rpush(producer_method + "_queue", str(panel_data))
+                    if panel_type == "anon":
+                        for producer_method in anon_producer_methods:
+                            # print(producer_method + "_queue", str(panel_data))
+                            r.rpush(producer_method + "_queue", str(panel_data))
+                    elif panel_type == "disable":
+                        for producer_method in disable_producer_methods:
+                            # print(producer_method + "_queue", str(panel_data))
+                            r.rpush(producer_method + "_queue", str(panel_data))
+                    else:
+                        for producer_method in producer_methods:
+                            # print(producer_method + "_queue", str(panel_data))
+                            r.rpush(producer_method + "_queue", str(panel_data))
                 else:
-                    for consumer_method in consumer_methods:
-                        # print(consumer_method + "_queue", str(panel_data))
-                        r.rpush(consumer_method + "_queue", str(panel_data))
+                    if panel_type == "anon":
+                        for consumer_method in anon_consumer_methods:
+                            # print(consumer_method + "_queue", str(panel_data))
+                            r.rpush(consumer_method + "_queue", str(panel_data))
+                    elif panel_type == "disable":
+                        for consumer_method in disable_consumer_methods:
+                            # print(consumer_method + "_queue", str(panel_data))
+                            r.rpush(consumer_method + "_queue", str(panel_data))
+                    else:
+                        for consumer_method in consumer_methods:
+                            # print(consumer_method + "_queue", str(panel_data))
+                            r.rpush(consumer_method + "_queue", str(panel_data))
                 cnt += 1
             except Exception as e:
                 log_message("ERROR", {"db": client, "msg": "Error while pushing panel to redis", "err": e})
@@ -246,35 +284,37 @@ if __name__ == "__main__":
         setup_logger(log_file_name)
 
         get_latest_max_uids_commands="""perl -lne 'chomp; $cmd="mongosh -u """ + mongo_config['user'] + """ -p """ + mongo_config['passwd'] + """ -host """ + mongo_config["host"] + """ --port """ + str(mongo_config['port']) + """ --authenticationDatabase admin $_ --eval=\\047db.userDetails.find({},{uid:1,_id:0}).sort({uid:-1}).limit(1)\\047" if $_; $panel=$_ if $_; $out=`$cmd`; $uid = ($out =~ /uid: (\d+)/) ? $1 : ""; print "$panel,$uid"' """ + f"""{csv_file_name}"""
+        get_latest_max_uids_commands_anon="""perl -lne 'chomp; $cmd="mongosh -u """ + mongo_config['user'] + """ -p """ + mongo_config['passwd'] + """ -host """ + mongo_config["host"] + """ --port """ + str(mongo_config['port']) + """ --authenticationDatabase admin $_ --eval=\\047db.anonUserDetails.find({},{uid:1,_id:0}).sort({uid:-1}).limit(1)\\047" if $_; $panel=$_ if $_; $out=`$cmd`; $uid = ($out =~ /uid: (\d+)/) ? $1 : ""; print "$panel,$uid"' """ + f"""{csv_file_name}"""
+        get_latest_max_uids_commands_disable="""perl -lne 'chomp; $cmd="mongosh -u """ + mongo_config['user'] + """ -p """ + mongo_config['passwd'] + """ -host """ + mongo_config["host"] + """ --port """ + str(mongo_config['port']) + """ --authenticationDatabase admin $_ --eval=\\047db.disableUserDetails.find({},{uid:1,_id:0}).sort({uid:-1}).limit(1)\\047" if $_; $panel=$_ if $_; $out=`$cmd`; $uid = ($out =~ /uid: (\d+)/) ? $1 : ""; print "$panel,$uid"' """ + f"""{csv_file_name}"""
         
-        try:
-            clients = run_shell_command(get_latest_max_uids_commands)
-            clients = [line.strip().split(",") for line in clients.strip().split("\n")]
-        except Exception as e:
-            log_message("ERROR", {"mag": "Error executing shell command", "command": get_latest_max_uids_commands, "error": str(e)})
-            exit()
+        for command in [(get_latest_max_uids_commands, 'normal'), (get_latest_max_uids_commands_anon, 'anon'), (get_latest_max_uids_commands_disable, 'disable')]:
+            try:
+                clients = run_shell_command(command[0])
+                clients = [line.strip().split(",") for line in clients.strip().split("\n")]
+            except Exception as e:
+                log_message("ERROR", {"mag": "Error executing shell command", "command": command[0], "error": str(e)})
+                exit()
 
-        clients = [[name, int(num) if num.isdigit() else None] for name, num in clients]
-        for name, num in clients:
-            if num is None:
-                log_message("ERROR", {"mag": "client not found", "client": name})
-                clients.remove([name, num])
-                continue
+            clients = [[name, int(num) if num.isdigit() else None] for name, num in clients]
+            for name, num in clients:
+                if num is None:
+                    log_message("ERROR", {"mag": "client not found", "client": name})
+                    clients.remove([name, num])
+                    continue
 
-        clients = [client for client in clients if client[1] is not None]
-        print(clients)
-        
-        log_message("INFO", {"msg": f"starting to push {len(clients)} panels to redis"})
-        
-        push_panel_to_redis(clients, is_both)
+            clients = [client for client in clients if client[1] is not None]
+            
+            log_message("INFO", {"msg": f"starting to push {len(clients)} panels to redis"})
+            
+            push_panel_to_redis(clients, is_both, command[1])
 
-        # for producer_method in producer_methods: # consumer_methods:
-        #     producer_method = producer_method + "_queue"
-        #     data = read_panel_from_redis(r, producer_method)            
-        #     while data:
-        #         print(data)
-        #         data = read_panel_from_redis(r, producer_method)
-        #     print()
+            # for producer_method in producer_methods: # consumer_methods:
+            #     producer_method = producer_method + "_queue"
+            #     data = read_panel_from_redis(r, producer_method)            
+            #     while data:
+            #         print(data)
+            #         data = read_panel_from_redis(r, producer_method)
+            #     print()
 
     else:
         print("Please provide a CSV file path and redis key as an argument.")
