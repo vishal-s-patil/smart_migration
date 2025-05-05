@@ -1607,6 +1607,56 @@ def run_health_check(*args, **kwargs) -> tuple[bool, str]:
     """
     return health_check(PROPERTY_FILE, HEALTH_CHECK_LOG)
 
+def get_kafka_status(*args, **kwargs) -> tuple[bool, str]:
+    """
+    Runs the Kafka status script and returns the output.
+    """
+    KAFKA_SCRIPT_PATH = "/home/mongodb/smart_migration/tabulate_data.py"
+    try:
+        # Ensure the script has execute permissions (important for security)
+        subprocess.run(["chmod", "+x", KAFKA_SCRIPT_PATH], check=True)
+        result = subprocess.run(["python3", KAFKA_SCRIPT_PATH, "/home/mongodb/smart_migration/" + panels_file_name],  # Pass the argument
+                                 capture_output=True, text=True, check=True)
+        return True, result.stdout
+    except subprocess.CalledProcessError as e:
+        return False, f"Error running Kafka status script: {e.stderr}"
+    except FileNotFoundError:
+        return False, f"Kafka status script not found at {KAFKA_SCRIPT_PATH}"
+    except Exception as e:
+        return False, f"An unexpected error occurred: {e}"
+
+def get_migration_status(*args, **kwargs) -> tuple[bool, str]:
+    """
+    Gets the status of the migration.
+    """
+    try:
+        total_pending_count = 0
+        ENV = config_dict.get('env', 'dev')
+
+        redis_table_header = f"Env: {ENV}\n"
+        redis_table_header += "+---------------------------------------------------------+--------------------+\n"
+        redis_table_header += "|                                         Queue Name                                          | Pending Count        |\n"
+        redis_table_header += "+---------------------------------------------------------+--------------------+\n"
+
+        kafka_status_output = get_kafka_status()
+        message = ""
+
+        # Only send if there's at least one non-zero queue
+        if total_pending_count > 0:
+            redis_table_footer = "+---------------------------------------------------------+--------------------+\n"
+            message += f"Redis Status:\n```{redis_table_header}{redis_table_rows}{redis_table_footer}```\n"
+        else:
+            print("All queue lengths are zero.")
+
+        if "No data found" not in kafka_status_output:
+            message += "\nKafka Status:\n"
+            message += f"```{kafka_status_output}```" #append the kafka output
+
+        return True, message
+
+    except Exception as e:
+        return False, f"Failed to get migration status: {str(e)}"
+
 def backup_redis_data(*args, **kwargs) -> tuple[bool, str]:
     """
     Takes backup of Redis data in human-readable format for GET, HGETALL, and LRANGE operations.
@@ -1715,6 +1765,7 @@ tools = [
     Tool.from_function(func=create_ts_dbs_collections, name="create_ts_dbs_collections", description="Reads the csv containing the panels and cids and creates the time series databases or if databases already exist, it creates the collections."),
     Tool.from_function(func=create_panels_cid_csv_file, name="create_panels_cid_csv_file", description="Creates a csv file containing the panels and cids."),
     Tool.from_function(func=get_migrating_panels, name="get_migrating_panels", description="Gets the panels that are currently being migrated."),
+    Tool.from_function(func=get_migration_status, name="get_migration_status", description="Gets the status of the migration."),
 ]
 
 # custom_prompt_template = """"""
