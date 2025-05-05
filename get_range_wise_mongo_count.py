@@ -30,7 +30,6 @@ def read_property_file() -> tuple[bool, dict]:
         return False, f"Failed to read property file: {str(e)}"
 
 read_property_file()
-config_dict['authdb'] = 'admin'
 
 def parse_mongo_uri(uri: str) -> dict:
     """
@@ -107,7 +106,7 @@ end_uid = int(sys.argv[4]) # 10314714 # 14448417
 batch = 10000
 
 def get_mongo_client(config):
-    uri = f"mongodb://{config['user']}:{config['passwd']}@{config['host']}:{config['port']}/{config['authdb']}"
+    uri = f"mongodb://{config['user']}:{config['passwd']}@{config['host']}:{config['port']}/{config['auth_source']}"
     return MongoClient(uri)
 
 def get_count(collection_object, start_uid, end_uid):
