@@ -1008,7 +1008,7 @@ def get_migrating_panels(*args, **kwargs) -> tuple[bool, list]:
     """
     try:
         # Get all files in the migration logs directory
-        migration_logs_dir = os.path.join(BASE_MIGRATION_LOG_DIR, 'panels.txt')
+        migration_logs_dir = os.path.join(BASE_DIR, 'panels.txt')
         
         # read the panels.txt file
         with open(migration_logs_dir, 'r') as f:
