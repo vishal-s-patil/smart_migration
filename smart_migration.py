@@ -1631,7 +1631,7 @@ def get_kafka_status(*args, **kwargs) -> tuple[bool, str]:
         subprocess.run(["chmod", "+x", KAFKA_SCRIPT_PATH], check=True)
         result = subprocess.run(["python3", KAFKA_SCRIPT_PATH, "/home/mongodb/smart_migration/" + 'panels.txt'],  # Pass the argument
                                  capture_output=True, text=True, check=True)
-        return True, result.stdout
+        return True, str(result.stdout)
     except subprocess.CalledProcessError as e:
         return False, f"Error running Kafka status script: {e.stderr}"
     except FileNotFoundError:
@@ -1710,10 +1710,7 @@ def get_running_methods_status(*args, **kwargs) -> tuple[bool, str]:
     Get the status of the migration in a table format.
     """
     try:
-        total_pending_count = 0
-        ENV = config_dict.get('env', 'dev')
 
-        
         kafka_status_output = get_kafka_status()
         message = ""
 
