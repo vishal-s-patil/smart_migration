@@ -1660,6 +1660,7 @@ def get_running_methods_status(*args, **kwargs) -> tuple[bool, str]:
             message += "\nKafka Status:\n"
             message += f"```{kafka_status_output}```" 
 
+        print('message', message)
         return True, format(message)
 
     except Exception as e:
