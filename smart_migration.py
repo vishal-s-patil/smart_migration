@@ -1627,7 +1627,7 @@ def get_kafka_status(*args, **kwargs) -> tuple[bool, str]:
 
 def get_migration_status(*args, **kwargs) -> tuple[bool, str]:
     """
-    Gets the status of the migration.
+    Get the status of the migration in a table format.
     """
     try:
         total_pending_count = 0
@@ -1766,7 +1766,7 @@ tools = [
     Tool.from_function(func=create_panels_cid_csv_file, name="create_panels_cid_csv_file", description="Creates a csv file containing the panels and cids."),
     
     Tool.from_function(func=get_migrating_panels, name="get_migrating_panels", description="Gets the panels that are currently being migrated."),
-    Tool.from_function(func=get_migration_status, name="get_migration_status", description="Gets the status of the migration."),
+    Tool.from_function(func=get_migration_status, name="get_migration_status", description="Get the status of the migration in a table format."),
 ]
 
 # custom_prompt_template = """"""
