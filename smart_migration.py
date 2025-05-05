@@ -1644,7 +1644,7 @@ def get_kafka_status(*args, **kwargs) -> tuple[bool, str]:
 #         message += f"```\n{cleaned_output}\n```"
 #         return message
 
-def format(kafka_status_output):
+def format_kafka_status_for_slack(kafka_status_output):
     """
     Formats the raw Kafka status output into a human-readable message for Slack.
 
@@ -1652,7 +1652,7 @@ def format(kafka_status_output):
         kafka_status_output (str): The raw string output from the Kafka status check.
 
     Returns:
-        str or None: The formatted message string if data is found, otherwise None.
+        str or None: The formatted message string if active data is found, otherwise None.
     """
     if "No data found" in kafka_status_output:
         return None
@@ -1668,15 +1668,15 @@ def format(kafka_status_output):
                      for row in lines[2:] if row.strip()]
 
         if not data_rows:
-            return "No running Kafka consumer groups found."
+            return "No Kafka consumer groups found."
 
-        running_groups = [row for row in data_rows if row.get('current_producer_offset') != '-1']
+        active_groups = [row for row in data_rows if row.get('current_producer_offset') != '-1']
 
-        if not running_groups:
+        if not active_groups:
             return "No active Kafka consumer groups found."
 
         message = "*Active Kafka Consumer Group Status:*\n```"
-        for row in running_groups:
+        for row in active_groups:
             message += f"• *Group Name:* {row['group_name']}\n"
             message += f"  • Status: {row['status']}\n"
             message += f"  • Update Time: {row['update_time']}\n"
@@ -1689,6 +1689,7 @@ def format(kafka_status_output):
             message += f"  • Produced per Hour: {row['produced_per_hour']}\n\n"
         message += "```"
         return message
+
 
 def get_running_methods_status(*args, **kwargs) -> tuple[bool, str]:
     """
