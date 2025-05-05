@@ -315,9 +315,9 @@ def get_migration_status(*args, **kwargs):
         **kwargs: Arbitrary keyword arguments
     
     Returns:
-        tuple: (success: bool, result: dict)
+        tuple: (success: bool, result: str)
             - success: True if operation was successful, False otherwise
-            - result: Dictionary containing read_queues and write_queues with their lengths
+            - result: Formatted string containing read_queues and write_queues with their lengths
     """
     try:
         # Get all keys starting with read and write
@@ -333,10 +333,24 @@ def get_migration_status(*args, **kwargs):
         for key in write_keys:
             write_queues[key] = redis_client.llen(key)
         
-        return True, {
-            "read_queues": read_queues,
-            "write_queues": write_queues
-        }
+        # Format the output string
+        output = "Migration Status:\n"
+        
+        if read_queues:
+            output += "\nRead Queues:\n"
+            for queue, length in read_queues.items():
+                output += f"  {queue}: {length} items\n"
+        else:
+            output += "\nNo read queues found\n"
+            
+        if write_queues:
+            output += "\nWrite Queues:\n"
+            for queue, length in write_queues.items():
+                output += f"  {queue}: {length} items\n"
+        else:
+            output += "\nNo write queues found\n"
+        
+        return True, output
     except Exception as e:
         return False, f"Failed to get queue lengths: {str(e)}"
 
@@ -1666,17 +1680,17 @@ def format_kafka_status_for_slack(kafka_status_output):
         header = [h.strip() for h in lines[0].strip('+-').split('|')]
         data_rows = [dict(zip(header, [d.strip() for d in row.strip().split('|')]))
                      for row in lines[2:] if row.strip()]
-
+        print('data_rows', data_rows)
         if not data_rows:
             return "No Kafka consumer groups found."
 
-        active_groups = [row for row in data_rows if row.get('current_producer_offset') != '-1']
+        # active_groups = [row for row in data_rows if row.get('current_producer_offset') != '-1']
 
-        if not active_groups:
-            return "No active Kafka consumer groups found."
+        # if not active_groups:
+        #     return "No active Kafka consumer groups found."
 
         message = "*Active Kafka Consumer Group Status:*\n```"
-        for row in active_groups:
+        for row in data_rows:
             message += f"• *Group Name:* {row['group_name']}\n"
             message += f"  • Status: {row['status']}\n"
             message += f"  • Update Time: {row['update_time']}\n"
