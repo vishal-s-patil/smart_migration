@@ -30,6 +30,7 @@ def read_property_file() -> tuple[bool, dict]:
         return False, f"Failed to read property file: {str(e)}"
 
 read_property_file()
+config_dict['authdb'] = 'admin'
 
 def parse_mongo_uri(uri: str) -> dict:
     """
