@@ -1615,7 +1615,7 @@ def get_kafka_status(*args, **kwargs) -> tuple[bool, str]:
     try:
         # Ensure the script has execute permissions (important for security)
         subprocess.run(["chmod", "+x", KAFKA_SCRIPT_PATH], check=True)
-        result = subprocess.run(["python3", KAFKA_SCRIPT_PATH, "/home/mongodb/smart_migration/" + panels_file_name],  # Pass the argument
+        result = subprocess.run(["python3", KAFKA_SCRIPT_PATH, "/home/mongodb/smart_migration/" + 'panels.txt'],  # Pass the argument
                                  capture_output=True, text=True, check=True)
         return True, result.stdout
     except subprocess.CalledProcessError as e:
