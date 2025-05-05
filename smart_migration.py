@@ -1835,8 +1835,8 @@ tools = [
     Tool.from_function(func=create_panels_cid_csv_file, name="create_panels_cid_csv_file", description="Creates a csv file containing the panels and cids."),
     
 
-    Tool.from_function(func=get_migration_status, name="get_migration_status", description="get the status of the migration"),
-    Tool.from_function(func=get_migrating_panels, name="get_migrating_panels", description="Gets the panels that are currently being migrated."),
+    Tool.from_function(func=get_migration_status, name="get_migration_status", description="get the status of the migration in a formated string"),
+    Tool.from_function(func=get_migrating_panels, name="get_migrating_panels", description="Gets the panels that are currently being migrated in a formated way"),
     Tool.from_function(func=get_running_methods_status, name="get_running_methods_status", description="Get running methods status."),
 ]
 
