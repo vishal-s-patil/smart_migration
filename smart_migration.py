@@ -165,7 +165,7 @@ def stop_redis(*args, **kwargs):
             - message: Status message describing the result
     """
     try:
-        subprocess.run(['systemctl', 'stop', 'redis'])
+        # subprocess.run(['systemctl', 'stop', 'redis'])
         return True, "Redis server stopped successfully"
     except Exception as e:
         return False, f"Failed to stop Redis: {str(e)}"
@@ -187,7 +187,8 @@ def delete_keys_by_pattern(pattern, *args, **kwargs):
     try:
         keys = redis_client.keys(pattern)
         if keys:
-            redis_client.delete(*keys)
+            pass
+            # redis_client.delete(*keys)
         return True, f"Deleted keys matching pattern: {pattern}"
     except Exception as e:
         return False, f"Failed to delete keys: {str(e)}"
@@ -469,7 +470,8 @@ def stop_kafka(*args, **kwargs):
             - message: Status message describing the result
     """
     try:
-        subprocess.run(['systemctl', 'stop', 'kafka'], check=True)
+        pass
+        # subprocess.run(['systemctl', 'stop', 'kafka'], check=True)
         return True, "Kafka service stopped successfully"
     except subprocess.CalledProcessError as e:
         return False, f"Failed to stop Kafka: {str(e)}"
@@ -661,8 +663,8 @@ def clear_kafka_directories(*args, **kwargs):
         kafka_clear_cmd = f"sudo rm -rf {kafka_logs_dir}/* {kafka_logs_dir}/.* 2>/dev/null"
         zookeeper_clear_cmd = f"sudo rm -rf {zookeeper_dir}/* {zookeeper_dir}/.* 2>/dev/null"
         
-        kafka_clear_status = os.system(kafka_clear_cmd)
-        zookeeper_clear_status = os.system(zookeeper_clear_cmd)
+        # kafka_clear_status = os.system(kafka_clear_cmd)
+        # zookeeper_clear_status = os.system(zookeeper_clear_cmd)
         
         # Check if directories are empty (excluding . and ..)
         kafka_empty = len(os.listdir(kafka_logs_dir)) <= 2  # . and .. are always present
@@ -718,7 +720,8 @@ def stop_zookeeper(*args, **kwargs):
             - message: Status message describing the result
     """
     try:
-        subprocess.run(['systemctl', 'stop', 'zookeeper'], check=True)
+        pass
+        # subprocess.run(['systemctl', 'stop', 'zookeeper'], check=True)
         return True, "Zookeeper service stopped successfully"
     except subprocess.CalledProcessError as e:
         return False, f"Failed to stop Zookeeper: {str(e)}"
@@ -998,6 +1001,25 @@ def clean_migration_logs(*args, **kwargs) -> tuple[bool, str]:
     except Exception as e:
         return False, f"Failed to clean migration logs: {str(e)}"
 
+
+def get_migrating_panels(*args, **kwargs) -> tuple[bool, list]:
+    """
+    Gets the panels that are currently being migrated.
+    """
+    try:
+        # Get all files in the migration logs directory
+        migration_logs_dir = os.path.join(BASE_MIGRATION_LOG_DIR, 'panels.txt')
+        
+        # read the panels.txt file
+        with open(migration_logs_dir, 'r') as f:
+            panels = f.readlines()
+        
+        # Filter out non-files and directories
+        return True, [panel.strip() for panel in panels if panel.strip()]
+
+    except Exception as e:
+        return False, f"Failed to get migrating panels: {str(e)}"
+
 def check_migration_processes(*args, **kwargs) -> tuple[bool, dict]:
     """
     Checks if any migration processes are running by checking for:
@@ -1023,15 +1045,16 @@ def check_migration_processes(*args, **kwargs) -> tuple[bool, dict]:
         
         # Check for each process
         for process in ['run_producer', 'run_consumer', 'kill_consumer']:
+            pass
             # result = subprocess.run(
             #     ['ps', '-eaf', '|', 'grep', process],
             #     capture_output=True,
             #     text=True
             # )
-            result = os.system(f"ps -eaf | grep {process}")
-            print('result.stdout', result)
-            # If grep finds itself and the process, count > 1
-            processes[process] = len(result.stdout.splitlines()) >= 1
+            # result = os.system(f"ps -eaf | grep {process}")
+            # print('result.stdout', result)
+            # # If grep finds itself and the process, count > 1
+            # processes[process] = len(result.stdout.splitlines()) >= 1
             
         # Check for java write process
         # result = subprocess.run(
@@ -1039,9 +1062,9 @@ def check_migration_processes(*args, **kwargs) -> tuple[bool, dict]:
         #     capture_output=True,
         #     text=True
         # )
-        result = os.system(f"ps -eaf | grep java | grep write")
-        print('result.stdout', result)
-        processes['java_write'] = len(result.stdout.splitlines()) >= 1
+        # result = os.system(f"ps -eaf | grep java | grep write")
+        # print('result.stdout', result)
+        # processes['java_write'] = len(result.stdout.splitlines()) >= 1
         
         # Check for java read process
         # result = subprocess.run(
@@ -1049,9 +1072,9 @@ def check_migration_processes(*args, **kwargs) -> tuple[bool, dict]:
         #     capture_output=True,
         #     text=True
         # )
-        result = os.system(f"ps -eaf | grep java | grep read")
-        print('result.stdout', result)
-        processes['java_read'] = len(result.stdout.splitlines()) >= 1
+        # result = os.system(f"ps -eaf | grep java | grep read")
+        # print('result.stdout', result)
+        # processes['java_read'] = len(result.stdout.splitlines()) >= 1
             
         return True, processes
     except Exception as e:
@@ -1691,6 +1714,7 @@ tools = [
     Tool.from_function(func=backup_redis_data, name="backup_redis_data", description="Takes backup of Redis data in human-readable format for both GET and HGETALL operations."),
     Tool.from_function(func=create_ts_dbs_collections, name="create_ts_dbs_collections", description="Reads the csv containing the panels and cids and creates the time series databases or if databases already exist, it creates the collections."),
     Tool.from_function(func=create_panels_cid_csv_file, name="create_panels_cid_csv_file", description="Creates a csv file containing the panels and cids."),
+    Tool.from_function(func=get_migrating_panels, name="get_migrating_panels", description="Gets the panels that are currently being migrated."),
 ]
 
 # custom_prompt_template = """"""
