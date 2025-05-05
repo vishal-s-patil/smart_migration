@@ -1023,31 +1023,34 @@ def check_migration_processes(*args, **kwargs) -> tuple[bool, dict]:
         
         # Check for each process
         for process in ['run_producer', 'run_consumer', 'kill_consumer']:
-            result = subprocess.run(
-                ['ps', '-eaf', '|', 'grep', process],
-                capture_output=True,
-                text=True
-            )
-            print('result.stdout', result.stdout)
+            # result = subprocess.run(
+            #     ['ps', '-eaf', '|', 'grep', process],
+            #     capture_output=True,
+            #     text=True
+            # )
+            result = os.system(f"ps -eaf | grep {process}")
+            print('result.stdout', result)
             # If grep finds itself and the process, count > 1
             processes[process] = len(result.stdout.splitlines()) >= 1
             
         # Check for java write process
-        result = subprocess.run(
-            ['ps', '-eaf', '|', 'grep', 'java', '|', 'grep', 'write'],
-            capture_output=True,
-            text=True
-        )
-        print(result.stdout)
+        # result = subprocess.run(
+        #     ['ps', '-eaf', '|', 'grep', 'java', '|', 'grep', 'write'],
+        #     capture_output=True,
+        #     text=True
+        # )
+        result = os.system(f"ps -eaf | grep java | grep write")
+        print('result.stdout', result)
         processes['java_write'] = len(result.stdout.splitlines()) >= 1
         
         # Check for java read process
-        result = subprocess.run(
-            ['ps', '-eaf', '|', 'grep', 'java', '|', 'grep', 'read'],
-            capture_output=True,
-            text=True
-        )
-        print(result.stdout)
+        # result = subprocess.run(
+        #     ['ps', '-eaf', '|', 'grep', 'java', '|', 'grep', 'read'],
+        #     capture_output=True,
+        #     text=True
+        # )
+        result = os.system(f"ps -eaf | grep java | grep read")
+        print('result.stdout', result)
         processes['java_read'] = len(result.stdout.splitlines()) >= 1
             
         return True, processes
