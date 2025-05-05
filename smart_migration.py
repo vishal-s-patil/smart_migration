@@ -1877,7 +1877,7 @@ def api_smart_query():
         # Check if this is a duplicate request by checking the timestamp
         current_time = time.time()
         if hasattr(api_smart_query, 'last_request_time') and \
-           current_time - api_smart_query.last_request_time < 0:  # 5 second threshold
+           current_time - api_smart_query.last_request_time < 5:  # 5 second threshold
             return jsonify({
                 "success": False,
                 "message": "Duplicate request ignored"
