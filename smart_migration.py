@@ -1028,7 +1028,7 @@ def check_migration_processes(*args, **kwargs) -> tuple[bool, dict]:
                 capture_output=True,
                 text=True
             )
-            print(result.stdout)
+            print('result.stdout', result.stdout)
             # If grep finds itself and the process, count > 1
             processes[process] = len(result.stdout.splitlines()) >= 1
             
