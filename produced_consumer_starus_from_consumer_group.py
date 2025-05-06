@@ -94,7 +94,7 @@ if __name__ == "__main__":
 
             for panel in panels:
                 print(f"Processing panel: {panel}")
-                f_out.write(f"Processing panel: {panel}\n")
+                # f_out.write(f"Processing panel: {panel}\n")
 
                 group_names = [
                     f"{panel}_{num_partitions}_AnonEngagementDetails_grp",
@@ -110,7 +110,7 @@ if __name__ == "__main__":
 
                 for group_name in group_names:
                     print(f"  Describing group: {group_name}")
-                    f_out.write(f"  Describing group: {group_name}\n")
+                    # f_out.write(f"  Describing group: {group_name}\n")
 
                     stdout, stderr, returncode = execute_kafka_consumer_command(bootstrap_servers, group_name, kafka_home)
 
