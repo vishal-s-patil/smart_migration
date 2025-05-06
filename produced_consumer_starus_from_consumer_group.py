@@ -62,7 +62,7 @@ def execute_kafka_consumer_command(bootstrap_servers, group_name, kafka_home):
 
 def format_log_entry(group_name, output):
     """Formats the log entry based on the output format and content."""
-    if re.match(r"^Consumed: Produced: Lag:$", output):
+    if re.match(r"^Consumed:\s+Produced:\s+Lag:", output):
         return f"[WARNING] {group_name} :: {output}"
     elif re.match(r"^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\s+Consumed:\s+(\d+)\s+Produced:\s+(\d+)\s+Lag:\s+(\d+)$", output):
         match = re.match(r"^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\s+Consumed:\s+(\d+)\s+Produced:\s+(\d+)\s+Lag:\s+(\d+)$", output)
