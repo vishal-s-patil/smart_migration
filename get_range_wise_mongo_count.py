@@ -103,7 +103,7 @@ destination_mongo_config = parse_mongo_uri(config_dict['dst_mongo_uri'])
 
 start_uid = int(sys.argv[3]) # 3000000
 end_uid = int(sys.argv[4]) # 10314714 # 14448417
-batch = 10000
+batch = int(sys.argv[5])
 
 def get_mongo_client(config):
     uri = f"mongodb://{config['user']}:{config['passwd']}@{config['host']}:{config['port']}/{config['auth_source']}"
@@ -191,9 +191,11 @@ def count_documents_in_batches(mongo_config, label):
             # count = col.count_documents({"uid": {"$gte": current, "$lt": current + batch}})
             count = get_count(col, current, current+batch)
             total += count
-            print(f"[{label}] UIDs {current} - {current + batch - 1}: Count = {count}")
+            # print(f"[{label}] UIDs {current} - {current + batch - 1}: Count = {count}")
             current += batch
-        print(f"[{label}] Total count: {total}")
+        # print(f"[{label}] [total_count: {total}]")
+        print(f"\n[{label}] [panel: {panel_name}] [ev_type: {coll_name}] [uid_range: {start_uid:,} to {end_uid:,}] [total_count: {total}]")
+
     except ConnectionFailure as e:
         print(f"Failed to connect to {label} MongoDB: {e}")
 
