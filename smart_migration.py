@@ -19,7 +19,6 @@ import time
 import json
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
-import inspect
 import logging
 
 load_dotenv()
@@ -2168,6 +2167,7 @@ You will also help in tracking the status of the migration with respect to all t
 If there is any confusion in running a function, please ask me to clarify and do not run the function without my explicit confirmation.
 Also keep track of function that are executed previously which will help in debugging 
 Remember same query can be asked multiple times don't get confused and change the function to be executed when asked multiple times. call the same function again or if confusion, ask me to clarify.
+There are 2 types of functions which are: read(does not change the state of the system) and write(changes the state of the system). for all the write functions, you need to ask me to confirm the action before running the function.
 """
 
 memory = ConversationBufferMemory()
