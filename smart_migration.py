@@ -20,6 +20,7 @@ import json
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 import inspect
+import logging
 
 load_dotenv()
 
@@ -44,6 +45,7 @@ VALIDATION_OF_NON_EXISTANCE_OF_DBS_LOG = BASE_DIR + "/logs/validation_of_non_exi
 RUN_PRODUCER_LOG = BASE_DIR + "/logs/run_producer.log"
 RUN_CONSUMER_LOG = BASE_DIR + "/logs/run_consumer.log"
 KILL_CONSUMER_LOG = BASE_DIR + "/logs/kill_consumer.log"
+PYTHON2_PATH = "/usr/local/bin/python2.7"
 NUM_PARTITIONS = 10
 
 SLACK_URL = os.getenv("SLACK_URL")
@@ -51,6 +53,12 @@ llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash-001", google_api_key=os.get
 
 config_dict = {}
 
+# logging 
+def setup_logging():
+    logging.basicConfig(filename=LOG_PATH, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    logging.info("Smart Migration Agent started")
+
+setup_logging()
 
 def read_property_file(*args, **kwargs) -> tuple[bool, dict]:
     """
@@ -78,26 +86,35 @@ def read_property_file(*args, **kwargs) -> tuple[bool, dict]:
 
 read_property_file()
 redis_client = redis.Redis(host=config_dict['redis_uri'], port=config_dict['redis_port'], db=0)
+LOG_LEVEL = config_dict['smart_migration_log_level']
 
-def process_panel(panel_name, cid):
+def execute_ts_collection_creation_script(panel_name, cid):
     """Runs the database creation script for a given panel and CID and returns the log string."""
     db_name = f"ts_{panel_name}_{cid}"  # Assuming a naming convention for the DB
     print(panel_name, cid)
     command = [
-        "/usr/local/bin/python2.7",
+        PYTHON2_PATH,
         TS_DBS_CREATION_SCRIPT_PATH,
         panel_name,
         str(cid)
     ]
-    result = subprocess.run(command, capture_output=True, text=True)
-    output = result.stdout.strip().lower()
+    
+    if LOG_LEVEL == "DEBUG":
+        logging.debug(f"Running command: {' '.join(command)}")
+        output = "database created sucessfully"
+    else:   
+        result = subprocess.run(command, capture_output=True, text=True)
+        output = result.stdout.strip().lower()
+
     log_string = ""
 
     if "database created sucessfully" in output:
         log_string = f"[Info] [DB:{db_name}] [msg:created]"
+        logging.info(f"[DB:{db_name}] created successfully")
     else:
         error_message = result.stderr.strip()
         log_string = f"[Error] [DB:{db_name}] [msg:failed] [err:{error_message}]"
+        logging.error(f"[DB:{db_name}] creation failed: {error_message}")
     return log_string
 
 def create_ts_dbs_collections(*args, **kwargs):
@@ -111,14 +128,19 @@ def create_ts_dbs_collections(*args, **kwargs):
             panel_name = row.get('panel')
             cid = int(row.get('cid'))
             if panel_name and cid:
-                log_entry = process_panel(panel_name, cid)
+                log_entry = execute_ts_collection_creation_script(panel_name, cid)
                 logs.append(log_entry)
             else:
+                logging.error(f"[DB:N/A] [msg:Skipped row due to missing 'panel' or 'cid': {row}]")
                 logs.append(f"[Error] [DB:N/A] [msg:Skipped row due to missing 'panel' or 'cid': {row}]")
 
     with open(TS_COLLECTION_CREATION_LOG, 'w') as logfile:
+        success_count = 0
         for log in logs:
+            if "created successfully" in log:
+                success_count += 1
             logfile.write(log + '\n')
+        logging.info(f"Total databases created: {success_count}")
 
 def start_redis(*args, **kwargs):
     """
@@ -135,9 +157,12 @@ def start_redis(*args, **kwargs):
     """
     try:
         command = ['systemctl', 'start', 'redis']
-        print(f"Starting Redis server with command: {' '.join(command)}")
-        result = subprocess.run(command, capture_output=True, text=True)
-        
+        if LOG_LEVEL == "DEBUG":
+            logging.debug(f"Starting Redis server with command: {' '.join(command)}")
+            return True, "Redis server started successfully"
+        else:
+            result = subprocess.run(command, capture_output=True, text=True)
+            
         if result.returncode == 0:
             print("Redis server started successfully")
             return True, "Redis server started successfully"
@@ -165,8 +190,12 @@ def stop_redis(*args, **kwargs):
             - message: Status message describing the result
     """
     try:
-        # subprocess.run(['systemctl', 'stop', 'redis'])
-        return True, "Redis server stopped successfully"
+        if LOG_LEVEL == "DEBUG":
+            logging.debug("Stopping Redis server")
+            return True, "Redis server stopped successfully"
+        else:
+            subprocess.run(['systemctl', 'stop', 'redis'])
+            return True, "Redis server stopped successfully"
     except Exception as e:
         return False, f"Failed to stop Redis: {str(e)}"
 
@@ -187,9 +216,20 @@ def delete_keys_by_pattern(pattern, *args, **kwargs):
     try:
         keys = redis_client.keys(pattern)
         if keys:
-            pass
-            # redis_client.delete(*keys)
-        return True, f"Deleted keys matching pattern: {pattern}"
+            if LOG_LEVEL == "DEBUG":
+                logging.debug(f"Deleting keys matching pattern: {pattern}")
+                return True, f"Deleted keys matching pattern: {pattern}"
+            else:
+                redis_client.delete(*keys)
+                logging.info(f"Deleted keys matching pattern: {pattern}")
+                return True, f"Deleted keys matching pattern: {pattern}"
+        else:
+            if LOG_LEVEL == "DEBUG":
+                logging.debug(f"No keys found matching pattern: {pattern}")
+                return True, f"No keys found matching pattern: {pattern}"
+            else:
+                logging.warning(f"No keys found matching pattern: {pattern}")
+                return True, f"No keys found matching pattern: {pattern}"
     except Exception as e:
         return False, f"Failed to delete keys: {str(e)}"
 
@@ -237,9 +277,15 @@ def delete_all_keys(*args, **kwargs):
             - message: Status message describing the result
     """
     try:
-        redis_client.flushdb()
-        return True, "All keys deleted successfully"
+        if LOG_LEVEL == "DEBUG":
+            logging.debug("Deleting all keys")
+            return True, "All keys deleted successfully"
+        else:
+            redis_client.flushdb()
+            logging.info("All keys deleted successfully")
+            return True, "All keys deleted successfully"
     except Exception as e:
+        logging.error(f"Failed to delete all keys: {str(e)}")
         return False, f"Failed to delete all keys: {str(e)}"
 
 def delete_specific_key(key, *args, **kwargs):
@@ -257,13 +303,21 @@ def delete_specific_key(key, *args, **kwargs):
             - message: Status message describing the result
     """
     try:
-        if redis_client.delete(key):
+        if LOG_LEVEL == "DEBUG":
+            logging.debug(f"Deleting key: {key}")
             return True, f"Key '{key}' deleted successfully"
-        return False, f"Key '{key}' not found"
+        else:
+            if redis_client.delete(key):
+                logging.info(f"Key '{key}' deleted successfully")
+                return True, f"Key '{key}' deleted successfully"
+            else:
+                logging.warning(f"Key '{key}' not found")
+                return True, f"Key '{key}' not found"
     except Exception as e:
+        logging.error(f"Failed to delete key: {str(e)}")
         return False, f"Failed to delete key: {str(e)}"
 
-def get_methods_count_form_redis(*args, **kwargs):
+def get_methods_count_from_redis(*args, **kwargs):
     """
     Gets the count of redis keys starting with 'read' and 'write'
     
@@ -277,14 +331,23 @@ def get_methods_count_form_redis(*args, **kwargs):
             - result: Dictionary containing read_panels, write_panels, and total_panels counts
     """
     try:
-        read_keys = len(redis_client.keys("read*"))
-        write_keys = len(redis_client.keys("write*"))
-        return True, {
-            "read_panels": read_keys,
-            "write_panels": write_keys,
-            "total_panels": read_keys + write_keys
-        }
+        if LOG_LEVEL == "DEBUG":
+            logging.debug("Getting methods count from Redis")
+            return True, {
+                "read_panels": 0,
+                "write_panels": 0,
+                "total_panels": 0
+            }
+        else:
+            read_keys = len(redis_client.keys("read*"))
+            write_keys = len(redis_client.keys("write*"))
+            return True, {
+                "read_panels": read_keys,
+                "write_panels": write_keys,
+                "total_panels": read_keys + write_keys
+                }
     except Exception as e:
+        logging.error(f"Failed to get panel count: {str(e)}")
         return False, f"Failed to get panel count: {str(e)}"
 
 def get_total_keys(*args, **kwargs):
@@ -301,12 +364,17 @@ def get_total_keys(*args, **kwargs):
             - result: Dictionary containing total_keys count
     """
     try:
-        total_keys = len(redis_client.keys("*"))
-        return True, {"total_keys": total_keys}
+        if LOG_LEVEL == "DEBUG":
+            logging.debug("Getting total keys from Redis")
+            return True, {"total_keys": 0}
+        else:
+            total_keys = len(redis_client.keys("*"))
+            return True, {"total_keys": total_keys}
     except Exception as e:
+        logging.error(f"Failed to get total keys: {str(e)}")
         return False, f"Failed to get total keys: {str(e)}"
 
-def get_migration_status(*args, **kwargs):
+def get_migration_status(*args, **kwargs) -> tuple[bool, str]:
     """
     Gets the length of all queues starting with 'read' and 'write'.
     
@@ -320,10 +388,14 @@ def get_migration_status(*args, **kwargs):
             - result: Formatted string containing read_queues and write_queues with their lengths
     """
     try:
-        # Get all keys starting with read and write
-        read_keys = [key.decode() for key in redis_client.keys("read*")]
-        write_keys = [key.decode() for key in redis_client.keys("write*")]
-        
+        if LOG_LEVEL == "DEBUG":
+            logging.debug("Getting migration status from Redis")
+            return True, "Migration status retrieved successfully"
+        else:
+            # Get all keys starting with read and write
+            read_keys = [key.decode() for key in redis_client.keys("read*")]
+            write_keys = [key.decode() for key in redis_client.keys("write*")]
+            
         # Get length of each queue using traditional for loops
         read_queues = {}
         for key in read_keys:
@@ -352,6 +424,7 @@ def get_migration_status(*args, **kwargs):
         
         return True, output
     except Exception as e:
+        logging.error(f"Failed to get queue lengths: {str(e)}")
         return False, f"Failed to get queue lengths: {str(e)}"
 
 def check_redis_status(*args, **kwargs):
@@ -368,12 +441,17 @@ def check_redis_status(*args, **kwargs):
             - result: Dictionary containing Redis server status
     """
     try:
-        result = subprocess.run(['systemctl', 'is-active', 'redis'], 
+        if LOG_LEVEL == "DEBUG":
+            logging.debug("Checking Redis server status")
+            return True, {"status": "active/inactive/failed"}
+        else:
+            result = subprocess.run(['systemctl', 'is-active', 'redis'], 
                               capture_output=True, 
                               text=True)
-        status = result.stdout.strip()
-        return True, {"status": status}
+            status = result.stdout.strip()
+            return True, {"status": status}
     except Exception as e:
+        logging.error(f"Failed to check Redis status: {str(e)}")
         return False, f"Failed to check Redis status: {str(e)}"
 
 # KAFKA
@@ -391,11 +469,17 @@ def get_kafka_topics_count(*args, **kwargs):
             - result: Dictionary containing topics_count
     """
     try:
-        admin_client = KafkaAdminClient(bootstrap_servers=config_dict['kafka_bootstrap_servers'])
-        topics = admin_client.list_topics()
-        admin_client.close()
-        return True, {"topics_count": len(topics)}
+        if LOG_LEVEL == "DEBUG":
+            logging.debug("Getting Kafka topics count")
+            return True, {"topics_count": 0}
+        else:
+            admin_client = KafkaAdminClient(bootstrap_servers=config_dict['kafka_bootstrap_servers'])
+            topics = admin_client.list_topics()
+            admin_client.close()
+            logging.info(f"Kafka topics count: {len(topics)}")
+            return True, {"topics_count": len(topics)}
     except Exception as e:
+        logging.error(f"Failed to get topics count: {str(e)}")
         return False, f"Failed to get topics count: {str(e)}"
 
 def get_kafka_groups_count(*args, **kwargs):
@@ -412,11 +496,17 @@ def get_kafka_groups_count(*args, **kwargs):
             - result: Dictionary containing groups_count
     """
     try:
-        admin_client = KafkaAdminClient(bootstrap_servers=config_dict['kafka_bootstrap_servers'])
-        groups = admin_client.list_consumer_groups()
-        admin_client.close()
-        return True, {"groups_count": len(groups)}
+        if LOG_LEVEL == "DEBUG":
+            logging.debug("Getting Kafka groups count")
+            return True, {"groups_count": 0}
+        else:
+            admin_client = KafkaAdminClient(bootstrap_servers=config_dict['kafka_bootstrap_servers'])
+            groups = admin_client.list_consumer_groups()
+            admin_client.close()
+            logging.info(f"Kafka groups count: {len(groups)}")
+            return True, {"groups_count": len(groups)}
     except Exception as e:
+        logging.error(f"Failed to get groups count: {str(e)}")
         return False, f"Failed to get groups count: {str(e)}"
 
 def check_topics_groups_match(*args, **kwargs):
@@ -433,20 +523,30 @@ def check_topics_groups_match(*args, **kwargs):
             - result: Dictionary containing topics_count, groups_count, and match_status
     """
     try:
-        admin_client = KafkaAdminClient(bootstrap_servers=config_dict['kafka_bootstrap_servers'])
-        topics = admin_client.list_topics()
-        groups = admin_client.list_consumer_groups()
-        admin_client.close()
-        
+        if LOG_LEVEL == "DEBUG":
+            logging.debug("Checking if topics and groups match")
+            return True, {
+                "topics_count": 0,
+                "groups_count": 0,
+                "match_status": True
+            }
+        else:
+            admin_client = KafkaAdminClient(bootstrap_servers=config_dict['kafka_bootstrap_servers'])
+            topics = admin_client.list_topics()
+            groups = admin_client.list_consumer_groups()
+            admin_client.close()
+            
         topics_count = len(topics)
         groups_count = len(groups)
         
+        logging.info(f"Topics count: {topics_count}, Groups count: {groups_count}")
         return True, {
             "topics_count": topics_count,
             "groups_count": groups_count,
             "match_status": topics_count == groups_count
         }
     except Exception as e:
+        logging.error(f"Failed to check topics and groups match: {str(e)}")
         return False, f"Failed to check topics and groups match: {str(e)}"
 
 def start_kafka(*args, **kwargs):
@@ -463,11 +563,18 @@ def start_kafka(*args, **kwargs):
             - message: Status message describing the result
     """
     try:
-        subprocess.run(['systemctl', 'start', 'kafka'], check=True)
-        return True, "Kafka service started successfully"
+        if LOG_LEVEL == "DEBUG":
+            logging.debug("Starting Kafka service")
+            return True, "Kafka service started successfully"
+        else:
+            subprocess.run(['systemctl', 'start', 'kafka'], check=True)
+            logging.info("Kafka service started successfully")
+            return True, "Kafka service started successfully"
     except subprocess.CalledProcessError as e:
+        logging.error(f"Failed to start Kafka: {str(e)}")
         return False, f"Failed to start Kafka: {str(e)}"
     except Exception as e:
+        logging.error(f"An unexpected error occurred while starting Kafka: {str(e)}")
         return False, f"An unexpected error occurred while starting Kafka: {str(e)}"
 
 def stop_kafka(*args, **kwargs):
@@ -484,12 +591,18 @@ def stop_kafka(*args, **kwargs):
             - message: Status message describing the result
     """
     try:
-        pass
-        # subprocess.run(['systemctl', 'stop', 'kafka'], check=True)
-        return True, "Kafka service stopped successfully"
+        if LOG_LEVEL == "DEBUG":
+            logging.debug("Stopping Kafka service")
+            return True, "Kafka service stopped successfully"
+        else:
+            subprocess.run(['systemctl', 'stop', 'kafka'], check=True)
+            logging.info("Kafka service stopped successfully")
+            return True, "Kafka service stopped successfully"
     except subprocess.CalledProcessError as e:
+        logging.error(f"Failed to stop Kafka: {str(e)}")
         return False, f"Failed to stop Kafka: {str(e)}"
     except Exception as e:
+        logging.error(f"An unexpected error occurred while stopping Kafka: {str(e)}")
         return False, f"An unexpected error occurred while stopping Kafka: {str(e)}"
 
 def check_kafka_status(*args, **kwargs):
@@ -506,17 +619,23 @@ def check_kafka_status(*args, **kwargs):
             - result: Dictionary containing status information
     """
     try:
-        result = subprocess.run(['systemctl', 'is-active', 'kafka'], 
+        if LOG_LEVEL == "DEBUG":
+            logging.debug("Checking Kafka service status")
+            return True, {"status": "active/inactive/failed"}
+        else:
+            result = subprocess.run(['systemctl', 'is-active', 'kafka'], 
                               capture_output=True, 
                               text=True)
-        status = result.stdout.strip()
-        return True, {
-            "status": status,
-            "is_active": status == "active",
-            "is_inactive": status == "inactive",
-            "is_not_running": status == "failed"
-        }
+            status = result.stdout.strip()
+            logging.info(f"Kafka status: {status}")
+            return True, {
+                "status": status,
+                "is_active": status == "active",
+                "is_inactive": status == "inactive",
+                "is_not_running": status == "failed"
+            }
     except Exception as e:
+        logging.error(f"Failed to check Kafka status: {str(e)}")
         return False, f"Failed to check Kafka status: {str(e)}"
 
 def delete_all_kafka_topics(*args, **kwargs):
@@ -533,19 +652,24 @@ def delete_all_kafka_topics(*args, **kwargs):
             - message: Status message describing the result
     """
     try:
-        admin_client = KafkaAdminClient(bootstrap_servers=config_dict['kafka_bootstrap_servers'])
-        topics = admin_client.list_topics()
-        
+        if LOG_LEVEL == "DEBUG":
+            logging.debug("Deleting all Kafka topics")
+            return True, "Successfully deleted all Kafka topics"
+        else:
+            admin_client = KafkaAdminClient(bootstrap_servers=config_dict['kafka_bootstrap_servers'])
+            topics = admin_client.list_topics()
+            
         if not topics:
             admin_client.close()
             return True, "No topics found to delete"
             
         # Delete all topics
         admin_client.delete_topics(topics)
-        
         admin_client.close()
+        logging.info(f"Successfully deleted {len(topics)} topics")
         return True, f"Successfully deleted {len(topics)} topics"
     except Exception as e:
+        logging.error(f"Failed to delete topics: {str(e)}")
         return False, f"Failed to delete topics: {str(e)}"
 
 def delete_specific_kafka_topic(topic_name, *args, **kwargs):
@@ -563,8 +687,12 @@ def delete_specific_kafka_topic(topic_name, *args, **kwargs):
             - message: Status message describing the result
     """
     try:
-        admin_client = KafkaAdminClient(bootstrap_servers=config_dict['kafka_bootstrap_servers'])
-        
+        if LOG_LEVEL == "DEBUG":
+            logging.debug(f"Deleting specific Kafka topic: {topic_name}")
+            return True, f"Successfully deleted topic '{topic_name}'"
+        else:
+            admin_client = KafkaAdminClient(bootstrap_servers=config_dict['kafka_bootstrap_servers'])
+            
         # Check if topic exists
         topics = admin_client.list_topics()
         if topic_name not in topics:
@@ -574,8 +702,10 @@ def delete_specific_kafka_topic(topic_name, *args, **kwargs):
         # Delete the specific topic
         admin_client.delete_topics([topic_name])
         admin_client.close()
+        logging.info(f"Successfully deleted topic '{topic_name}'")
         return True, f"Successfully deleted topic '{topic_name}'"
     except Exception as e:
+        logging.error(f"Failed to delete topic '{topic_name}': {str(e)}")
         return False, f"Failed to delete topic '{topic_name}': {str(e)}"
 
 def run_create_topics(*args, **kwargs):
@@ -590,25 +720,32 @@ def run_create_topics(*args, **kwargs):
     try:
         command = ['python3', 'create_topics.py', PANELS_FILE_PATH, str(NUM_PARTITIONS)]
         
-        with open(TOPIC_CREATION_LOG, 'w') as log_file:
-            result = subprocess.run(
-                command,
-                stdout=log_file,
-                stderr=subprocess.PIPE,
-                text=True
-            )
+        if LOG_LEVEL == "DEBUG":
+            logging.debug("Running command: " + " ".join(command))
+            return True, "Successfully created topics"
+        else:
+            with open(TOPIC_CREATION_LOG, 'w') as log_file:
+                result = subprocess.run(
+                    command,
+                    stdout=log_file,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
         
-        if result.returncode != 0:
-            return False, f"Failed to create topics: {result.stderr}"
+            if result.returncode != 0:
+                logging.error(f"Failed to create topics: {result.stderr}")
+                return False, f"Failed to create topics: {result.stderr}"
+                
+            # Check log file for error messages
+            with open(TOPIC_CREATION_LOG, 'r') as f:
+                if 'err' in f.read().lower():
+                    logging.error("Errors found in the log file")
+                    return False, "Errors found in the log file"
             
-        # Check log file for error messages
-        with open(TOPIC_CREATION_LOG, 'r') as f:
-            if 'err' in f.read().lower():
-                return False, "Errors found in the log file"
-        
-        return True, "Topics created successfully"
+            logging.info("Topics created successfully")
+            return True, "Topics created successfully"
     except Exception as e:
-        print(f"Error running create_topics.py: {str(e)}")
+        logging.error(f"Error running create_topics.py: {str(e)}")
         return False, f"Error running create_topics.py: {str(e)}"
 
 def run_validate_topics(*args, **kwargs):
@@ -623,24 +760,32 @@ def run_validate_topics(*args, **kwargs):
     try:
         command = ['python3', 'validate_topics.py', PANELS_FILE_PATH, str(NUM_PARTITIONS)]
         
-        with open(TOPIC_VALIDATION_LOG, 'w') as log_file:
-            result = subprocess.run(
-                command,
-                stdout=log_file,
-                stderr=subprocess.PIPE,
-                text=True
-            )
-        
-        if result.returncode != 0:
-            return False, f"Failed to validate topics: {result.stderr}"
+        if LOG_LEVEL == "DEBUG":
+            logging.debug("Running command: " + " ".join(command))
+            return True, "Successfully validated topics"
+        else:
+            with open(TOPIC_VALIDATION_LOG, 'w') as log_file:
+                result = subprocess.run(
+                    command,
+                    stdout=log_file,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
             
-        # Check log file for error messages
-        with open(TOPIC_VALIDATION_LOG, 'r') as f:
-            if 'err' in f.read().lower():
-                return False, "Errors found in the log file"
-        
-        return True, "Topics validated successfully"
+            if result.returncode != 0:
+                logging.error(f"Failed to validate topics: {result.stderr}")
+                return False, f"Failed to validate topics: {result.stderr}"
+                
+            # Check log file for error messages
+            with open(TOPIC_VALIDATION_LOG, 'r') as f:
+                if 'err' in f.read().lower():
+                    logging.error("Errors found in the log file")
+                    return False, "Errors found in the log file"
+            
+            logging.info("Topics validated successfully")
+            return True, "Topics validated successfully"
     except Exception as e:
+        logging.error(f"Error running validate_topics.py: {str(e)}")
         return False, f"Error running validate_topics.py: {str(e)}"
 
 def clear_kafka_directories(*args, **kwargs):
@@ -660,43 +805,56 @@ def clear_kafka_directories(*args, **kwargs):
             - message: Status message describing the result
     """
     try:
-        # Stop services
-        kafka_stop_success, kafka_stop_msg = stop_kafka()
-        zookeeper_stop_success, zookeeper_stop_msg = stop_zookeeper()
-        print(f"Kafka stop success: {kafka_stop_success}, Kafka stop msg: {kafka_stop_msg}")
-        
-        if not kafka_stop_success or not zookeeper_stop_success:
-            return False, f"Failed to stop services: Kafka - {kafka_stop_msg}, Zookeeper - {zookeeper_stop_msg}"
-        
-        # Clear directories
-        kafka_logs_dir = '/data/kafka-logs'
-        zookeeper_dir = '/data/zookeeper'
-        
-        # Remove all files including hidden ones using os.system
-        # Ignore the "refusing to remove . or .." messages as they are not errors
-        kafka_clear_cmd = f"sudo rm -rf {kafka_logs_dir}/* {kafka_logs_dir}/.* 2>/dev/null"
-        zookeeper_clear_cmd = f"sudo rm -rf {zookeeper_dir}/* {zookeeper_dir}/.* 2>/dev/null"
-        
-        # kafka_clear_status = os.system(kafka_clear_cmd)
-        # zookeeper_clear_status = os.system(zookeeper_clear_cmd)
-        
-        # Check if directories are empty (excluding . and ..)
-        kafka_empty = len(os.listdir(kafka_logs_dir)) <= 2  # . and .. are always present
-        zookeeper_empty = len(os.listdir(zookeeper_dir)) <= 2
-        
-        if not kafka_empty or not zookeeper_empty:
-            return False, "Failed to clear Kafka or Zookeeper directories"
-        
-        # Start services
-        kafka_start_success, kafka_start_msg = start_kafka()
-        zookeeper_start_success, zookeeper_start_msg = start_zookeeper()
-        
-        if not kafka_start_success or not zookeeper_start_success:
-            return False, f"Failed to start services: Kafka - {kafka_start_msg}, Zookeeper - {zookeeper_start_msg}"
+        if LOG_LEVEL == "DEBUG":
+            logging.debug("Clearing Kafka and Zookeeper directories")
+            return True, "Successfully cleared Kafka and Zookeeper directories"
+        else:
+            # Stop services
+            kafka_stop_success, kafka_stop_msg = stop_kafka()
+            zookeeper_stop_success, zookeeper_stop_msg = stop_zookeeper()
+            if kafka_stop_success and zookeeper_stop_success:
+                logging.info(f"Kafka and Zookeeper stopped successfully")
+            else:
+                logging.error(f"Failed to stop services: Kafka - {kafka_stop_msg}, Zookeeper - {zookeeper_stop_msg}")
+                return False, f"Failed to stop services: Kafka - {kafka_stop_msg}, Zookeeper - {zookeeper_stop_msg}"
+            
+            # Clear directories
+            kafka_logs_dir = '/data/kafka-logs'
+            zookeeper_dir = '/data/zookeeper'
+            
+            # Remove all files including hidden ones using os.system
+            # Ignore the "refusing to remove . or .." messages as they are not errors
+            kafka_clear_cmd = f"sudo rm -rf {kafka_logs_dir}/* {kafka_logs_dir}/.* 2>/dev/null"
+            zookeeper_clear_cmd = f"sudo rm -rf {zookeeper_dir}/* {zookeeper_dir}/.* 2>/dev/null"
+            
+            kafka_clear_status = os.system(kafka_clear_cmd)
+            zookeeper_clear_status = os.system(zookeeper_clear_cmd)
+            
+            # Check if directories are empty (excluding . and ..)
+            kafka_empty = len(os.listdir(kafka_logs_dir)) <= 2  # . and .. are always present
+            zookeeper_empty = len(os.listdir(zookeeper_dir)) <= 2
+            
+            if not kafka_empty or not zookeeper_empty:
+                logging.error(f"Failed to clear Kafka or Zookeeper directories: Kafka - {kafka_clear_status}, Zookeeper - {zookeeper_clear_status}")
+                return False, "Failed to clear Kafka or Zookeeper directories"
+            else:
+                logging.info("Kafka and Zookeeper directories cleared successfully")
+            
+            # Start services
+            kafka_start_success, kafka_start_msg = start_kafka()
+            zookeeper_start_success, zookeeper_start_msg = start_zookeeper()
+            
+            if not kafka_start_success or not zookeeper_start_success:
+                logging.error(f"Failed to start services: Kafka - {kafka_start_msg}, Zookeeper - {zookeeper_start_msg}")
+                return False, f"Failed to start services: Kafka - {kafka_start_msg}, Zookeeper - {zookeeper_start_msg}"
+            else:
+                logging.info("Kafka and Zookeeper services started successfully")
 
-        return True, "Successfully cleared Kafka and Zookeeper directories and restarted services"
+            logging.info("Successfully cleared Kafka and Zookeeper directories and restarted services")
+            return True, "Successfully cleared Kafka and Zookeeper directories and restarted services"
         
     except Exception as e:
+        logging.error(f"An unexpected error occurred: {str(e)}")
         return False, f"An unexpected error occurred: {str(e)}"
 
 def start_zookeeper(*args, **kwargs):
@@ -713,11 +871,18 @@ def start_zookeeper(*args, **kwargs):
             - message: Status message describing the result
     """
     try:
-        subprocess.run(['systemctl', 'start', 'zookeeper'], check=True)
-        return True, "Zookeeper service started successfully"
+        if LOG_LEVEL == "DEBUG":
+            logging.debug("Starting Zookeeper service with command: systemctl start zookeeper")
+            return True, "Zookeeper service started successfully"
+        else:
+            subprocess.run(['systemctl', 'start', 'zookeeper'], check=True)
+            logging.info("Zookeeper service started successfully")
+            return True, "Zookeeper service started successfully"
     except subprocess.CalledProcessError as e:
+        logging.error(f"Failed to start Zookeeper: {str(e)}")
         return False, f"Failed to start Zookeeper: {str(e)}"
     except Exception as e:
+        logging.error(f"An unexpected error occurred while starting Zookeeper: {str(e)}")
         return False, f"An unexpected error occurred while starting Zookeeper: {str(e)}"
 
 def stop_zookeeper(*args, **kwargs):
@@ -734,12 +899,18 @@ def stop_zookeeper(*args, **kwargs):
             - message: Status message describing the result
     """
     try:
-        pass
-        # subprocess.run(['systemctl', 'stop', 'zookeeper'], check=True)
-        return True, "Zookeeper service stopped successfully"
+        if LOG_LEVEL == "DEBUG":
+            logging.debug("Stopping Zookeeper service with command: systemctl stop zookeeper")
+            return True, "Zookeeper service stopped successfully"
+        else:
+            subprocess.run(['systemctl', 'stop', 'zookeeper'], check=True)
+            logging.info("Zookeeper service stopped successfully")
+            return True, "Zookeeper service stopped successfully"
     except subprocess.CalledProcessError as e:
+        logging.error(f"Failed to stop Zookeeper: {str(e)}")
         return False, f"Failed to stop Zookeeper: {str(e)}"
     except Exception as e:
+        logging.error(f"An unexpected error occurred while stopping Zookeeper: {str(e)}")
         return False, f"An unexpected error occurred while stopping Zookeeper: {str(e)}"
 
 # LLM 
@@ -768,6 +939,7 @@ def identify_panels(text: str, *args, **kwargs) -> list[str]:
 
         response = llm.invoke(prompt)
         extracted_panels_str = response.content
+        logging.debug(f"Extracted panels string: {extracted_panels_str}")
 
         # Split the extracted string by comma and then strip whitespace
         panels = [panel.strip() for panel in extracted_panels_str.split(',')]
@@ -778,10 +950,11 @@ def identify_panels(text: str, *args, **kwargs) -> list[str]:
             refined_panels.extend([p.strip() for p in panel.split('\n') if p.strip()])
 
         # Remove any empty strings that might have resulted from splitting
+        logging.info(f"Identified panels: {[panel for panel in refined_panels if panel]}")
         return [panel for panel in refined_panels if panel]
 
     except Exception as e:
-        print(f"An error occurred during panel identification: {e}")
+        logging.error(f"An error occurred during panel identification: {e}")
         return []
 
 
@@ -810,6 +983,7 @@ def identify_panels_and_cids(text: str, *args, **kwargs) -> list[str]:
 
         response = llm.invoke(prompt)
         extracted_panels_str = response.content
+        logging.debug(f"Extracted panels string: {extracted_panels_str}")
 
         # extract the panels and cids from the response
         panels_cids = []
@@ -819,10 +993,11 @@ def identify_panels_and_cids(text: str, *args, **kwargs) -> list[str]:
                 if len(parts) == 2:
                     panels_cids.append((parts[0].strip(), parts[1].strip()))
 
+        logging.info(f"Identified panels and cids: {panels_cids}")
         return panels_cids
 
     except Exception as e:
-        print(f"An error occurred during panel identification: {e}")
+        logging.error(f"An error occurred during panel identification: {e}")
         return []
 
 
@@ -851,6 +1026,7 @@ def identify_methods(text: str) -> list[str]:
 
         response = llm.invoke(prompt)
         extracted_methods_str = response.content
+        logging.debug(f"Extracted methods string: {extracted_methods_str}")
 
         # Split the extracted string by comma and then strip whitespace
         methods = [method.strip() for method in extracted_methods_str.split(',')]
@@ -861,10 +1037,11 @@ def identify_methods(text: str) -> list[str]:
             refined_methods.extend([m.strip() for m in method.split('\n') if m.strip()])
 
         # Remove any empty strings that might have resulted from splitting
+        logging.info(f"Identified methods: {[method for method in refined_methods if method]}")
         return [method for method in refined_methods if method]
 
     except Exception as e:
-        print(f"An error occurred during method identification: {e}")
+        logging.error(f"An error occurred during method identification: {e}")
         return []
 
 # OTHER HELPER FUNCTIONS
@@ -887,17 +1064,21 @@ def create_panels_file(text: list, *args, **kwargs) -> tuple[bool, str]:
             return False, "Input must be a string"
 
         panels = identify_panels(text, llm)
-
-        panels_file_path = os.path.join(BASE_DIR, 'panels.txt')
         
-        with open(panels_file_path, 'w') as f:
-            for panel in panels:
-                if not isinstance(panel, str):
-                    return False, f"Invalid panel format: {panel}"
-                f.write(f"{panel}\n")
-                
-        return True, f"Successfully created panels file at {panels_file_path}"
+        if LOG_LEVEL == "DEBUG":
+            logging.debug(f"Creating panels file with command: open {PANELS_FILE_PATH} -w")
+            return True, f"Successfully created panels file at {PANELS_FILE_PATH}"
+        else:
+            with open(PANELS_FILE_PATH, 'w') as f:
+                for panel in panels:
+                    if not isinstance(panel, str):
+                        return False, f"Invalid panel format: {panel}"
+                    f.write(f"{panel}\n")
+
+        logging.info(f"Successfully created panels file at {PANELS_FILE_PATH}")
+        return True, f"Successfully created panels file at {PANELS_FILE_PATH}"
     except Exception as e:
+        logging.error(f"Failed to create panels file: {str(e)}")
         return False, f"Failed to create panels file: {str(e)}"
 
 
@@ -921,16 +1102,22 @@ def create_panels_cid_csv_file(text: list, *args, **kwargs) -> tuple[bool, str]:
 
         panels_cids = identify_panels_and_cids(text, llm)
 
-        panels_file_path = PANELS_CID_CSV_FILE_PATH
+         
         
-        with open(panels_file_path, 'w') as f:
-            for panel_cid in panels_cids:
-                if not isinstance(panel_cid, tuple):
-                    return False, f"Invalid panel format: {panel_cid}"
-                f.write(f"{panel_cid[0]},{panel_cid[1]}\n")
+        if LOG_LEVEL == "DEBUG":
+            logging.debug(f"Creating panels_cids file with command: open {PANELS_CID_CSV_FILE_PATH} -w")
+            return True, f"Successfully created panels_cids file at {PANELS_CID_CSV_FILE_PATH}"
+        else:
+            with open(PANELS_CID_CSV_FILE_PATH, 'w') as f:
+                for panel_cid in panels_cids:
+                    if not isinstance(panel_cid, tuple):
+                        return False, f"Invalid panel format: {panel_cid}"
+                    f.write(f"{panel_cid[0]},{panel_cid[1]}\n")
                 
-        return True, f"Successfully created panels_cids file at {panels_file_path}"
+        logging.info(f"Successfully created panels_cids file at {PANELS_CID_CSV_FILE_PATH}")
+        return True, f"Successfully created panels_cids file at {PANELS_CID_CSV_FILE_PATH}"
     except Exception as e:
+        logging.error(f"Failed to create panels_cids file: {str(e)}")
         return False, f"Failed to create panels_cids file: {str(e)}"
 
 def get_panels_file_length(*args, **kwargs) -> tuple[bool, dict]:
@@ -947,19 +1134,25 @@ def get_panels_file_length(*args, **kwargs) -> tuple[bool, dict]:
             - result: Dictionary containing panels_count and file_path
     """
     try:
-        panels_file_path = os.path.join(BASE_DIR, 'panels.txt')
+        if LOG_LEVEL == "DEBUG":
+            logging.debug(f"Getting panels file length")
+            return True, {"panels_count": 0, "file_path": PANELS_FILE_PATH}
+        else:
+            panels_file_path = PANELS_FILE_PATH
         
-        if not os.path.exists(panels_file_path):
-            return False, "Panels file does not exist"
-            
-        with open(panels_file_path, 'r') as f:
-            panels = [line.strip() for line in f if line.strip()]
-            
-        return True, {
-            "panels_count": len(panels),
-            "file_path": panels_file_path
-        }
+            if not os.path.exists(panels_file_path):
+                return False, "Panels file does not exist"
+                
+            with open(panels_file_path, 'r') as f:
+                panels = [line.strip() for line in f if line.strip()]
+                
+            logging.info(f"Panels file length: {len(panels)}")
+            return True, {
+                "panels_count": len(panels),
+                "file_path": panels_file_path
+            }
     except Exception as e:
+        logging.error(f"Failed to get panels count: {str(e)}")
         return False, f"Failed to get panels count: {str(e)}"
 
 def delete_panels_file(*args, **kwargs) -> tuple[bool, str]:
@@ -976,14 +1169,20 @@ def delete_panels_file(*args, **kwargs) -> tuple[bool, str]:
             - message: Status message describing the result
     """
     try:
-        panels_file_path = os.path.join(BASE_DIR, 'panels.txt')
+        if LOG_LEVEL == "DEBUG":
+            logging.debug(f"Deleting panels file")
+            return True, "Successfully deleted panels file"
+        else:
+            panels_file_path = PANELS_FILE_PATH
         
         if not os.path.exists(panels_file_path):
             return False, "Panels file does not exist"
             
         os.remove(panels_file_path)
+        logging.info(f"Successfully deleted panels file at {panels_file_path}")
         return True, "Successfully deleted panels file"
     except Exception as e:
+        logging.error(f"Failed to delete panels file: {str(e)}")
         return False, f"Failed to delete panels file: {str(e)}"
 
 def clean_migration_logs(*args, **kwargs) -> tuple[bool, str]:
@@ -998,21 +1197,27 @@ def clean_migration_logs(*args, **kwargs) -> tuple[bool, str]:
             - message: Status message describing the result
     """
     try:
-        # Create backup directory with timestamp
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_dir = os.path.join(BASE_MIGRATION_LOG_DIR, f"migration_logs_bkp_{timestamp}")
-        
-        # Create backup directory if it doesn't exist
-        os.makedirs(backup_dir, exist_ok=True)
-        
-        # Move all files (not directories) to backup directory
-        for item in os.listdir(BASE_MIGRATION_LOG_DIR):
-            item_path = os.path.join(BASE_MIGRATION_LOG_DIR, item)
-            if os.path.isfile(item_path):
-                shutil.move(item_path, os.path.join(backup_dir, item))
-                
-        return True, f"Successfully backed up logs to {backup_dir}"
+        if LOG_LEVEL == "DEBUG":
+            logging.debug(f"Cleaning migration logs")
+            return True, "Successfully cleaned migration logs"
+        else:
+            # Create backup directory with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_dir = os.path.join(BASE_MIGRATION_LOG_DIR, f"migration_logs_bkp_{timestamp}")
+            
+            # Create backup directory if it doesn't exist
+            os.makedirs(backup_dir, exist_ok=True)
+            
+            # Move all files (not directories) to backup directory
+            for item in os.listdir(BASE_MIGRATION_LOG_DIR):
+                item_path = os.path.join(BASE_MIGRATION_LOG_DIR, item)
+                if os.path.isfile(item_path):
+                    shutil.move(item_path, os.path.join(backup_dir, item))
+
+            logging.info(f"Successfully backed up logs to {backup_dir}")
+            return True, f"Successfully backed up logs to {backup_dir}"
     except Exception as e:
+        logging.error(f"Failed to clean migration logs: {str(e)}")
         return False, f"Failed to clean migration logs: {str(e)}"
 
 
@@ -1021,17 +1226,24 @@ def get_migrating_panels(*args, **kwargs) -> tuple[bool, list]:
     Gets the panels that are currently being migrated.
     """
     try:
-        # Get all files in the migration logs directory
-        migration_logs_dir = os.path.join(BASE_DIR, 'panels.txt')
-        
-        # read the panels.txt file
-        with open(migration_logs_dir, 'r') as f:
-            panels = f.readlines()
-        
-        # Filter out non-files and directories
-        return True, [panel.strip() for panel in panels if panel.strip()]
+        if LOG_LEVEL == "DEBUG":
+            logging.debug(f"Getting migrating panels")
+            return True, []
+        else:
+            # Get all files in the migration logs directory
+            migration_logs_dir = os.path.join(BASE_DIR, 'panels.txt')
+            
+            # read the panels.txt file
+            with open(migration_logs_dir, 'r') as f:
+                panels = f.readlines()
+            
+            # Filter out non-files and directories
+            panels = [panel.strip() for panel in panels if panel.strip()]
+            logging.info(f"Migrating panels: {panels}")
+            return True, panels
 
     except Exception as e:
+        logging.error(f"Failed to get migrating panels: {str(e)}")
         return False, f"Failed to get migrating panels: {str(e)}"
 
 def check_migration_processes(*args, **kwargs) -> tuple[bool, dict]:
@@ -1049,49 +1261,47 @@ def check_migration_processes(*args, **kwargs) -> tuple[bool, dict]:
             - result: Dictionary containing process status or error message
     """
     try:
-        processes = {
-            'run_producer': False,
-            'run_consumer': False,
-            'kill_consumer': False,
-            'java_write': False,
-            'java_read': False
-        }
+        if LOG_LEVEL == "DEBUG":
+            logging.debug(f"Checking migration processes")
+            return True, {"run_producer": False, "run_consumer": False, "kill_consumer": False, "java_write": False, "java_read": False}
+        else:
+            processes = {
+                'run_producer': False,
+                'run_consumer': False,
+                'kill_consumer': False,
+                'java_write': False,
+                'java_read': False
+            }
         
-        # Check for each process
-        for process in ['run_producer', 'run_consumer', 'kill_consumer']:
-            pass
-            # result = subprocess.run(
-            #     ['ps', '-eaf', '|', 'grep', process],
-            #     capture_output=True,
-            #     text=True
-            # )
-            # result = os.system(f"ps -eaf | grep {process}")
-            # print('result.stdout', result)
-            # # If grep finds itself and the process, count > 1
-            # processes[process] = len(result.stdout.splitlines()) >= 1
+            # Check for each process
+            for process in ['run_producer', 'run_consumer', 'kill_consumer']:
+                result = subprocess.run(
+                    f"ps -eaf | grep {process}",
+                    capture_output=True,
+                    text=True
+                )
+                # If grep finds itself and the process, count > 1
+                processes[process] = len(result.stdout.splitlines()) > 1
+                
+            # Check for java write process
+            result = subprocess.run(
+                f"ps -eaf | grep java | grep write",
+                capture_output=True,
+                text=True
+            )
+            processes['java_write'] = len(result.stdout.splitlines()) > 1
             
-        # Check for java write process
-        # result = subprocess.run(
-        #     ['ps', '-eaf', '|', 'grep', 'java', '|', 'grep', 'write'],
-        #     capture_output=True,
-        #     text=True
-        # )
-        # result = os.system(f"ps -eaf | grep java | grep write")
-        # print('result.stdout', result)
-        # processes['java_write'] = len(result.stdout.splitlines()) >= 1
-        
-        # Check for java read process
-        # result = subprocess.run(
-        #     ['ps', '-eaf', '|', 'grep', 'java', '|', 'grep', 'read'],
-        #     capture_output=True,
-        #     text=True
-        # )
-        # result = os.system(f"ps -eaf | grep java | grep read")
-        # print('result.stdout', result)
-        # processes['java_read'] = len(result.stdout.splitlines()) >= 1
-            
-        return True, processes
+            # Check for java read process
+            result = subprocess.run(
+                f"ps -eaf | grep java | grep read",
+                capture_output=True,
+                text=True
+            )
+            processes['java_read'] = len(result.stdout.splitlines()) > 1
+                
+            return True, processes
     except Exception as e:
+        logging.error(f"Failed to check migration processes: {str(e)}")
         return False, f"Failed to check migration processes: {str(e)}"
 
 def kill_migration_processes(*args, **kwargs) -> tuple[bool, str]:
@@ -1105,40 +1315,47 @@ def kill_migration_processes(*args, **kwargs) -> tuple[bool, str]:
         tuple: (success: bool, message: str)
     """
     try:
-        processes = ['run_producer', 'run_consumer', 'kill_consumer']
-        killed = []
-        
-        for process in processes:
-            # First command: ps -eaf
-            ps_process = subprocess.Popen(['ps', '-eaf'], stdout=subprocess.PIPE)
+        if LOG_LEVEL == "DEBUG":
+            logging.debug(f"Killing migration processes")
+            return True, "Successfully killed migration processes"
+        else:
+            processes = ['run_producer', 'run_consumer', 'kill_consumer']
+            killed = []
             
-            # Second command: grep the process (reading from the output of ps)
-            grep_process = subprocess.Popen(
-                ['grep', process],
-                stdin=ps_process.stdout,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
-            )
+            for process in processes:
+                # First command: ps -eaf
+                ps_process = subprocess.Popen(['ps', '-eaf'], stdout=subprocess.PIPE)
+                
+                # Second command: grep the process (reading from the output of ps)
+                grep_process = subprocess.Popen(
+                    ['grep', process],
+                    stdin=ps_process.stdout,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE
+                )
+                
+                # Close the stdout of the first process
+                ps_process.stdout.close()
+                
+                # Get the output and error from grep
+                stdout, stderr = grep_process.communicate()
+                
+                # Skip the grep process itself
+                lines = stdout.decode().splitlines()
+                for line in lines:
+                    if process in line and 'grep' not in line:
+                        pid = line.split()[1]  # Get the PID
+                        subprocess.run(['kill', '-15', pid])
+                        killed.append(f"{process} (PID: {pid})")
             
-            # Close the stdout of the first process
-            ps_process.stdout.close()
-            
-            # Get the output and error from grep
-            stdout, stderr = grep_process.communicate()
-            
-            # Skip the grep process itself
-            lines = stdout.decode().splitlines()
-            for line in lines:
-                if process in line and 'grep' not in line:
-                    pid = line.split()[1]  # Get the PID
-                    subprocess.run(['kill', '-15', pid])
-                    killed.append(f"{process} (PID: {pid})")
-        
-        if killed:
-            killed_str = "\n".join(killed)
-            return True, f"Successfully killed processes:\n{killed_str}"
-        return True, "No migration processes were running"
+            if killed:
+                killed_str = "\n".join(killed)
+                logging.info(f"Successfully killed processes:\n{killed_str}")
+                return True, f"Successfully killed processes:\n{killed_str}"
+            logging.info("No migration processes were running")
+            return True, "No migration processes were running"
     except Exception as e:
+        logging.error(f"Failed to kill migration processes: {str(e)}")
         return False, f"Failed to kill migration processes: {str(e)}"
 
 def push_panels_info_to_redis(*args, **kwargs) -> tuple[bool, str]:
@@ -1152,40 +1369,50 @@ def push_panels_info_to_redis(*args, **kwargs) -> tuple[bool, str]:
             - message: Status message describing the result
     """
     try:
-        result = subprocess.run(
-            ['python3', os.path.join(BASE_DIR, 'push_panels_to_redis.py'),
-             os.path.join(BASE_DIR, 'panels.txt'),
-             os.path.join(BASE_DIR, 'logs/push.log'), '1'],
-            capture_output=True,
-            text=True
-        )
-        
-        # Check for errors in the output
-        if result.returncode != 0:
-            return False, f"Failed to push panels to Redis: {result.stderr}"
-            
-        # Check log file for error messages and get the latest info line
-        latest_info_line = None
-        with open(os.path.join(BASE_DIR, 'logs/push.log'), 'r') as f:
-            for line in f.readlines():
-                if 'panels to redis' in line.lower() and 'info' in line.lower():
-                    latest_info_line = line.strip()
-        
-        if latest_info_line:
-            pushed = latest_info_line.split('pushed')[1].strip()
-            pushed_cnt = int(pushed.split(' ')[0])
-            success, total_result = get_panels_file_length()
-            if not success:
-                return False, f"Failed to get total panels count: {total_result}"
-            total_cnt = total_result['panels_count']
-            
-            if pushed_cnt == total_cnt:
-                return True, f"Successfully pushed {pushed_cnt} panels to Redis"
-            else:
-                return False, f"Failed to push {total_cnt-pushed_cnt} panels to Redis and successfully pushed {pushed_cnt} panels"
+        if LOG_LEVEL == "DEBUG":
+            logging.debug(f"Pushing panels to Redis")
+            return True, "Successfully pushed panels to Redis"
         else:
-            return False, "No panel push information found in log file"
+            result = subprocess.run(
+                ['python3', os.path.join(BASE_DIR, 'push_panels_to_redis.py'),
+                os.path.join(BASE_DIR, 'panels.txt'),
+                os.path.join(BASE_DIR, 'logs/push.log'), '1'],
+                capture_output=True,
+                text=True
+            )
+        
+            # Check for errors in the output
+            if result.returncode != 0:
+                logging.error(f"Failed to push panels to Redis: {result.stderr}")
+                return False, f"Failed to push panels to Redis: {result.stderr}"
+                
+            # Check log file for error messages and get the latest info line
+            latest_info_line = None
+            with open(os.path.join(BASE_DIR, 'logs/push.log'), 'r') as f:
+                for line in f.readlines():
+                    if 'panels to redis' in line.lower() and 'info' in line.lower():
+                        latest_info_line = line.strip()
+            
+            if latest_info_line:
+                pushed = latest_info_line.split('pushed')[1].strip()
+                pushed_cnt = int(pushed.split(' ')[0])
+                success, total_result = get_panels_file_length()
+                if not success:
+                    logging.error(f"Failed to get total panels count: {total_result}")
+                    return False, f"Failed to get total panels count: {total_result}"
+                total_cnt = total_result['panels_count']
+                
+                if pushed_cnt == total_cnt:
+                    logging.info(f"Successfully pushed {pushed_cnt} panels to Redis")
+                    return True, f"Successfully pushed {pushed_cnt} panels to Redis"
+                else:
+                    logging.error(f"Failed to push {total_cnt-pushed_cnt} panels to Redis and successfully pushed {pushed_cnt} panels")
+                    return False, f"Failed to push {total_cnt-pushed_cnt} panels to Redis and successfully pushed {pushed_cnt} panels"
+            else:
+                logging.error("No panel push information found in log file")
+                return False, "No panel push information found in log file"
     except Exception as e:
+        logging.error(f"Failed to push panels to Redis: {str(e)}")
         return False, f"Failed to push panels to Redis: {str(e)}"
 
 def pre_migration_check(*args, **kwargs) -> tuple[bool, str]:
@@ -1204,66 +1431,85 @@ def pre_migration_check(*args, **kwargs) -> tuple[bool, str]:
         tuple: (success: bool, message: str)
     """
     try:
-        # 1. Initial health check
-        if not health_check(PROPERTY_FILE, HEALTH_CHECK_LOG):
-            return False, "Health check failed, please check"
+        if LOG_LEVEL == "DEBUG":
+            logging.debug(f"Pre-migration check")
+            return True, "All pre-migration checks passed successfully"
+        else:
+                # 1. Initial health check
+            if not health_check(PROPERTY_FILE, HEALTH_CHECK_LOG):
+                logging.error("Health check failed, please check")
+                return False, "Health check failed, please check"
             
-        # 2. Redis cleanup and verification
-        success, message = delete_all_keys()
-        if not success:
-            return False, f"Failed to clear Redis: {message}"
-            
-        success, result = get_total_keys()
-        if not success:
-            return False, f"Failed to verify Redis keys: {result}"
-        if result['total_keys'] != 0:
-            return False, "Redis keys not cleared properly"
-            
-        # 3. Kafka cleanup and topic setup
-        success, message = delete_all_kafka_topics()
-        if not success:
-            return False, f"Failed to delete Kafka topics: {message}"
-            
-        # Create topics
-        success, message = run_create_topics()
-        if not success:
-            return False, f"Failed to create Kafka topics: {message}"
-            
-        # Validate topics
-        success, message = run_validate_topics()
-        if not success:
-            return False, f"Failed to validate Kafka topics: {message}"
-            
-        # 4. Clean log folder
-        success, message = clean_migration_logs()
-        if not success:
-            return False, f"Failed to clean log folder: {message}"
-            
-        # 5. Verify time series collections
-        success, message = validate_time_series_collections()
-        if not success:
-            return False, f"Failed to validate time series collections: {message}"
-            
-        # 6. Push panels to Redis
-        success, message = push_panels_info_to_redis()
-        if not success:
-            return False, f"Failed to push panels to Redis: {message}"
-            
-        # 7. Check for running migration processes
-        success, result = check_migration_processes()
-        if not success:
-            return False, f"Failed to check migration processes: {result}"
-            
-        for process, running in result.items():
-            if running:
-                return False, f"Migration process {process} is still running"
+            # 2. Redis cleanup and verification
+            success, message = delete_all_keys()
+            if not success:
+                logging.error(f"Failed to clear Redis: {message}")
+                return False, f"Failed to clear Redis: {message}"
                 
-        # 8. Final health check
-        if not health_check(PROPERTY_FILE, HEALTH_CHECK_LOG):
-            return False, "Final health check failed, please check"
+            success, result = get_total_keys()
+            if not success:
+                logging.error(f"Failed to verify Redis keys: {result}")
+                return False, f"Failed to verify Redis keys: {result}"
+            if result['total_keys'] != 0:
+                logging.error("Redis keys not cleared properly")
+                return False, "Redis keys not cleared properly"
+                
+            # 3. Kafka cleanup and topic setup
+            success, message = delete_all_kafka_topics()
+            if not success:
+                logging.error(f"Failed to delete Kafka topics: {message}")
+                return False, f"Failed to delete Kafka topics: {message}"
+                
+            # Create topics
+            success, message = run_create_topics()
+            if not success:
+                logging.error(f"Failed to create Kafka topics: {message}")
+                return False, f"Failed to create Kafka topics: {message}"
+                
+            # Validate topics
+            success, message = run_validate_topics()
+            if not success:
+                logging.error(f"Failed to validate Kafka topics: {message}")
+                return False, f"Failed to validate Kafka topics: {message}"
+                
+            # 4. Clean log folder
+            success, message = clean_migration_logs()
+            if not success:
+                logging.error(f"Failed to clean log folder: {message}")
+                return False, f"Failed to clean log folder: {message}"
+                
+            # 5. Verify time series collections
+            success, message = validate_time_series_collections()
+            if not success:
+                logging.error(f"Failed to validate time series collections: {message}")
+                return False, f"Failed to validate time series collections: {message}"
+                
+            # 6. Push panels to Redis
+            success, message = push_panels_info_to_redis()
+            if not success:
+                logging.error(f"Failed to push panels to Redis: {message}")
+                return False, f"Failed to push panels to Redis: {message}"
+                
+            # 7. Check for running migration processes
+            success, result = check_migration_processes()
+            if not success:
+                logging.error(f"Failed to check migration processes: {result}")
+                return False, f"Failed to check migration processes: {result}"
+                
+            for process, running in result.items():
+                if running:
+                    logging.error(f"Migration process {process} is still running")
+                    return False, f"Migration process {process} is still running"
+                    
+            # 8. Final health check
+            if not health_check(PROPERTY_FILE, HEALTH_CHECK_LOG):
+                logging.error("Final health check failed, please check")
+                return False, "Final health check failed, please check"
             
-        return True, "All pre-migration checks passed successfully"
+            logging.info("All pre-migration checks passed successfully")
+            return True, "All pre-migration checks passed successfully"
     except Exception as e:
+        logging.error(f"Pre-migration check failed: {str(e)}")
         return False, f"Pre-migration check failed: {str(e)}"
 
 def start_producer_processes(*args, **kwargs) -> tuple[bool, str]:
@@ -1283,27 +1529,34 @@ def start_producer_processes(*args, **kwargs) -> tuple[bool, str]:
             os.path.join(BASE_DIR, script),
             os.path.join(BASE_DIR, 'logs', RUN_PRODUCER_LOG)
         ]
-        subprocess.Popen(cmd)
-        
-        time.sleep(2)  # Give process time to start
-        
-        # Check process status
-        result = subprocess.run(
-            f'ps -eaf | grep {script}',
-            shell=True,
-            capture_output=True,
-            text=True
-        )
-        
-        # Count actual processes (excluding grep itself)
-        process_lines = [line for line in result.stdout.splitlines() if script in line and 'grep' not in line]
-        
-        if len(process_lines) == 1:
-            return True, "Successfully started producer process\n" + result.stdout
+        if LOG_LEVEL == "DEBUG":
+            logging.debug(f"Starting producer process with command: {cmd}")
+            return True, "Successfully started producer process"
         else:
-            return False, f"Expected 1 producer process but found {len(process_lines)}"
+            subprocess.Popen(cmd)
+            
+            time.sleep(2)  # Give process time to start
+            
+            # Check process status
+            result = subprocess.run(
+                f'ps -eaf | grep {script}',
+                shell=True,
+                capture_output=True,
+                text=True
+            )
+            
+            # Count actual processes (excluding grep itself)
+            process_lines = [line for line in result.stdout.splitlines() if script in line and 'grep' not in line]
+            
+            if len(process_lines) == 1:
+                logging.info(f"Successfully started producer process\n" + result.stdout)
+                return True, "Successfully started producer process\n" + result.stdout
+            else:
+                logging.error(f"Expected 1 producer process but found {len(process_lines)}")
+                return False, f"Expected 1 producer process but found {len(process_lines)}"
             
     except Exception as e:
+        logging.error(f"Failed to start producer process: {str(e)}")
         return False, f"Failed to start producer process: {str(e)}"
 
 
@@ -1326,27 +1579,34 @@ def start_producer_processes_for_specific_methods(text: str, *args, **kwargs) ->
             '--methods',
             ','.join(methods)
         ]
-        subprocess.Popen(cmd)
-        
-        time.sleep(2)  # Give process time to start
-        
-        # Check process status
-        result = subprocess.run(
-            f'ps -eaf | grep {script}',
-            shell=True,
-            capture_output=True,
-            text=True
-        )
-        
-        # Count actual processes (excluding grep itself)
-        process_lines = [line for line in result.stdout.splitlines() if script in line and 'grep' not in line]
-        
-        if len(process_lines) == 1:
-            return True, "Successfully started producer process\n" + result.stdout
+        if LOG_LEVEL == "DEBUG":
+            logging.debug(f"Starting producer process with command: {cmd}")
+            return True, "Successfully started producer process"
         else:
-            return False, f"Expected 1 producer process but found {len(process_lines)}"
+            subprocess.Popen(cmd)
+                
+            time.sleep(2)  # Give process time to start
+            
+            # Check process status
+            result = subprocess.run(
+                f'ps -eaf | grep {script}',
+                shell=True,
+                capture_output=True,
+                text=True
+            )
+            
+            # Count actual processes (excluding grep itself)
+            process_lines = [line for line in result.stdout.splitlines() if script in line and 'grep' not in line]
+            
+            if len(process_lines) == 1:
+                logging.info(f"Successfully started producer process\n" + result.stdout)
+                return True, "Successfully started producer process\n" + result.stdout
+            else:
+                logging.error(f"Expected 1 producer process but found {len(process_lines)}")
+                return False, f"Expected 1 producer process but found {len(process_lines)}"
             
     except Exception as e:
+        logging.error(f"Failed to start producer process: {str(e)}")
         return False, f"Failed to start producer process: {str(e)}"
 
 def start_consumer_processes(*args, **kwargs) -> tuple[bool, str]:
@@ -1366,27 +1626,35 @@ def start_consumer_processes(*args, **kwargs) -> tuple[bool, str]:
             os.path.join(BASE_DIR, script),
             os.path.join(BASE_DIR, 'logs', RUN_CONSUMER_LOG)
         ]
-        subprocess.Popen(cmd)
         
-        time.sleep(2)  # Give process time to start
-        
-        # Check process status
-        result = subprocess.run(
-            f'ps -eaf | grep {script}',
-            shell=True,
-            capture_output=True,
-            text=True
-        )
-        
-        # Count actual processes (excluding grep itself)
-        process_lines = [line for line in result.stdout.splitlines() if script in line and 'grep' not in line]
-        
-        if len(process_lines) == 1:
-            return True, "Successfully started consumer process\n" + result.stdout
+        if LOG_LEVEL == "DEBUG":
+            logging.debug(f"Starting consumer process with command: {cmd}")
+            return True, "Successfully started consumer process"
         else:
-            return False, f"Expected 1 consumer process but found {len(process_lines)}"
+            subprocess.Popen(cmd)
+            
+            time.sleep(2)  # Give process time to start
+            
+                # Check process status
+            result = subprocess.run(
+                f'ps -eaf | grep {script}',
+                shell=True,
+                capture_output=True,
+                text=True
+            )
+            
+            # Count actual processes (excluding grep itself)
+            process_lines = [line for line in result.stdout.splitlines() if script in line and 'grep' not in line]
+            
+            if len(process_lines) == 1:
+                logging.info(f"Successfully started consumer process\n" + result.stdout)
+                return True, "Successfully started consumer process\n" + result.stdout
+            else:
+                logging.error(f"Expected 1 consumer process but found {len(process_lines)}")
+                return False, f"Expected 1 consumer process but found {len(process_lines)}"
             
     except Exception as e:
+        logging.error(f"Failed to start consumer process: {str(e)}")
         return False, f"Failed to start consumer process: {str(e)}"
 
 
@@ -1410,27 +1678,34 @@ def start_consumer_processes_for_specific_methods(text: str, *args, **kwargs) ->
             '--methods',
             ','.join(methods)
         ]
-        subprocess.Popen(cmd)
-        
-        time.sleep(2)  # Give process time to start
-        
-        # Check process status
-        result = subprocess.run(
-            f'ps -eaf | grep {script}',
-            shell=True,
-            capture_output=True,
-            text=True
-        )
-        
-        # Count actual processes (excluding grep itself)
-        process_lines = [line for line in result.stdout.splitlines() if script in line and 'grep' not in line]
-        
-        if len(process_lines) == 1:
-            return True, "Successfully started consumer process\n" + result.stdout
+        if LOG_LEVEL == "DEBUG":
+            logging.debug(f"Starting consumer process with command: {cmd}")
+            return True, "Successfully started consumer process"
         else:
-            return False, f"Expected 1 consumer process but found {len(process_lines)}"
+            subprocess.Popen(cmd)
+                
+            time.sleep(2)  # Give process time to start
+            
+            # Check process status
+            result = subprocess.run(
+                f'ps -eaf | grep {script}',
+                shell=True,
+                capture_output=True,
+                text=True
+            )
+            
+            # Count actual processes (excluding grep itself)
+            process_lines = [line for line in result.stdout.splitlines() if script in line and 'grep' not in line]
+            
+            if len(process_lines) == 1:
+                logging.info(f"Successfully started consumer process\n" + result.stdout)
+                return True, "Successfully started consumer process\n" + result.stdout
+            else:
+                logging.error(f"Expected 1 consumer process but found {len(process_lines)}")
+                return False, f"Expected 1 consumer process but found {len(process_lines)}"
             
     except Exception as e:
+        logging.error(f"Failed to start consumer process: {str(e)}")
         return False, f"Failed to start consumer process: {str(e)}"
 
 
@@ -1453,27 +1728,34 @@ def start_kill_consumer_processes(*args, **kwargs) -> tuple[bool, str]:
             os.path.join(BASE_DIR, 'logs', KILL_CONSUMER_LOG),
             config_dict['env']
         ]
-        subprocess.Popen(cmd)
-        
-        time.sleep(2)  # Give process time to start
-        
-        # Check process status
-        result = subprocess.run(
-            f'ps -eaf | grep {script}',
-            shell=True,
-            capture_output=True,
-            text=True
-        )
-        
-        # Count actual processes (excluding grep itself)
-        process_lines = [line for line in result.stdout.splitlines() if script in line and 'grep' not in line]
-        
-        if len(process_lines) == 1:
-            return True, "Successfully started kill consumer process\n" + result.stdout
+        if LOG_LEVEL == "DEBUG":
+            logging.debug(f"Starting kill consumer process with command: {cmd}")
+            return True, "Successfully started kill consumer process"
         else:
-            return False, f"Expected 1 kill consumer process but found {len(process_lines)}"
+            subprocess.Popen(cmd)
+                
+            time.sleep(2)  # Give process time to start
+            
+            # Check process status
+            result = subprocess.run(
+                f'ps -eaf | grep {script}',
+                shell=True,
+                capture_output=True,
+                text=True
+            )
+            
+            # Count actual processes (excluding grep itself)
+            process_lines = [line for line in result.stdout.splitlines() if script in line and 'grep' not in line]
+            
+            if len(process_lines) == 1:
+                logging.info(f"Successfully started kill consumer process\n" + result.stdout)
+                return True, "Successfully started kill consumer process\n" + result.stdout
+            else:
+                logging.error(f"Expected 1 kill consumer process but found {len(process_lines)}")
+                return False, f"Expected 1 kill consumer process but found {len(process_lines)}"
             
     except Exception as e:
+        logging.error(f"Failed to start kill consumer process: {str(e)}")
         return False, f"Failed to start kill consumer process: {str(e)}"
 
 def start_migration_processes(*args, **kwargs) -> tuple[bool, str]:
@@ -1490,47 +1772,57 @@ def start_migration_processes(*args, **kwargs) -> tuple[bool, str]:
             - message: Status message describing the result
     """
     try:
-        # Start producer process
-        success, message = start_producer_processes()
-        if not success:
-            return False, message
-            
-        # Start consumer process
-        success, message = start_consumer_processes()
-        if not success:
-            return False, message
-            
-        # Start kill consumer process
-        success, message = start_kill_consumer_processes()
-        if not success:
-            return False, message
-            
-        # Get final process status by checking each process separately
-        processes = {
-            'run_producer.py': False,
-            'run_consumer.py': False,
-            'kill_consumer.py': False
-        }
-        
-        return_result = ""
-        for script in processes.keys():
-            result = subprocess.run(
-                f'ps -eaf | grep {script}',
-                shell=True,
-                capture_output=True,
-                text=True
-            )
-            process_lines = [line for line in result.stdout.splitlines() if script in line and 'grep' not in line]
-            processes[script] = len(process_lines) == 1
-            return_result += result.stdout
-        all_running = all(processes.values())
-        if all_running:
-            return True, "Successfully started all migration processes\n" + return_result
+        if LOG_LEVEL == "DEBUG":
+            logging.debug(f"Starting migration processes (producer, consumer and kill_consumer processes)")
+            return True, "Successfully started migration processes"
         else:
-            not_running = [script for script, running in processes.items() if not running]
-            return False, f"Failed to start processes: {', '.join(not_running)}"
+            # Start producer process
+            success, message = start_producer_processes()
+            if not success:
+                logging.error(f"Failed to start producer process: {message}")
+                return False, message
+                
+            # Start consumer process
+            success, message = start_consumer_processes()
+            if not success:
+                logging.error(f"Failed to start consumer process: {message}")
+                return False, message
+                
+            # Start kill consumer process
+            success, message = start_kill_consumer_processes()
+            if not success:
+                logging.error(f"Failed to start kill consumer process: {message}")
+                return False, message
+                
+            # Get final process status by checking each process separately
+            processes = {
+                'run_producer.py': False,
+                'run_consumer.py': False,
+                'kill_consumer.py': False
+            }
+            
+            return_result = ""
+            for script in processes.keys():
+                result = subprocess.run(
+                    f'ps -eaf | grep {script}',
+                    shell=True,
+                    capture_output=True,
+                    text=True
+                )
+                process_lines = [line for line in result.stdout.splitlines() if script in line and 'grep' not in line]
+                processes[script] = len(process_lines) == 1
+                return_result += result.stdout
+            all_running = all(processes.values())
+            if all_running:
+                logging.info(f"Successfully started all migration processes\n" + return_result)
+                return True, "Successfully started all migration processes\n" + return_result
+            else:
+                not_running = [script for script, running in processes.items() if not running]
+                logging.error(f"Failed to start processes: {', '.join(not_running)}")
+                return False, f"Failed to start processes: {', '.join(not_running)}"
             
     except Exception as e:
+        logging.error(f"Failed to start migration processes: {str(e)}")
         return False, f"Failed to start migration processes: {str(e)}"
 
 def check_migration_concurrency(*args, **kwargs) -> tuple[bool, str]:
@@ -1545,8 +1837,12 @@ def check_migration_concurrency(*args, **kwargs) -> tuple[bool, str]:
             - result: Message describing the concurrency status or error message
     """
     try:
-        # Check producer processes
-        ps_process = subprocess.Popen(['ps', '-eaf'], stdout=subprocess.PIPE)
+        if LOG_LEVEL == "DEBUG":
+            logging.debug(f"Checking migration concurrency")
+            return True, "Successfully checked migration concurrency in DEBUG mode"
+        else:
+            # Check producer processes
+            ps_process = subprocess.Popen(['ps', '-eaf'], stdout=subprocess.PIPE)
         grep_process = subprocess.Popen(
             ['grep', 'run_producer.py'],
             stdin=ps_process.stdout,
@@ -1570,10 +1866,13 @@ def check_migration_concurrency(*args, **kwargs) -> tuple[bool, str]:
         consumer_count = len([line for line in stdout.decode().splitlines() if 'grep' not in line])
         
         if producer_count == consumer_count:
+            logging.info(f"Currently migration concurrency is {producer_count}")
             return True, f"Currently migration concurrency is {producer_count}"
         else:
-            return False, f"Concurrency mismatch: {producer_count} producers and {consumer_count} consumers running"
+            logging.warning(f"Concurrency mismatch: {producer_count} producers and {consumer_count} consumers are running")
+            return False, f"Concurrency mismatch: {producer_count} producers and {consumer_count} consumers are running"
     except Exception as e:
+        logging.error(f"Failed to check migration concurrency: {str(e)}")
         return False, f"Failed to check migration concurrency: {str(e)}"
 
 def validate_time_series_collections(*args, **kwargs) -> tuple[bool, str]:
@@ -1587,31 +1886,35 @@ def validate_time_series_collections(*args, **kwargs) -> tuple[bool, str]:
             - message: Status message describing the result
     """
     try:
-        # Run the validation script and redirect output to log file
-        with open(TS_COLLECTION_VALIDATION_LOG, 'w') as f:
-            result = subprocess.run(
-                ['python3', os.path.join(BASE_DIR, 'ts_mongo_ind_index_validation.py'), PANELS_FILE_PATH],
-                text=True,
-                stdout=f,
-                stderr=f
-            )
-        
-        # Check for errors in the output
-        if result.returncode != 0:
-            return False, f"Validation script failed with return code {result.returncode}"
-            
-        # Check for errors in the output
-        if result.returncode != 0:
-            return False, f"Validation script failed with return code {result.returncode}"
-            
-        # Check log file for error messages
-        with open(TS_COLLECTION_VALIDATION_LOG, 'r') as f:
-            log_content = f.read().lower()
-            if 'error' in log_content or 'err' in log_content:
-                return False, "Errors found in time series index validation log"
+        if LOG_LEVEL == "DEBUG":
+            logging.debug(f"Validating time series indexes")
+            return True, "Successfully validated time series indexes in DEBUG mode"
+        else:
+            # Run the validation script and redirect output to log file
+            with open(TS_COLLECTION_VALIDATION_LOG, 'w') as f:
+                result = subprocess.run(
+                    ['python3', os.path.join(BASE_DIR, 'ts_mongo_ind_index_validation.py'), PANELS_FILE_PATH],
+                    text=True,
+                    stdout=f,
+                    stderr=f
+                )
+             
+            # Check for errors in the output
+            if result.returncode != 0:
+                logging.error(f"Validation script failed with return code {result.returncode}")
+                return False, f"Validation script failed with return code {result.returncode}"
                 
-        return True, "Time series indexes validated successfully"
+            # Check log file for error messages
+            with open(TS_COLLECTION_VALIDATION_LOG, 'r') as f:
+                log_content = f.read().lower()
+                if 'error' in log_content or 'err' in log_content:
+                    logging.error(f"Errors found in time series index validation log")
+                    return False, "Errors found in time series index validation log"
+                    
+            logging.info(f"Time series indexes validated successfully")
+            return True, "Time series indexes validated successfully"
     except Exception as e:
+        logging.error(f"Failed to validate time series indexes: {str(e)}")
         return False, f"Failed to validate time series indexes: {str(e)}"
 
 
@@ -1619,7 +1922,11 @@ def run_health_check(*args, **kwargs) -> tuple[bool, str]:
     """
     Runs the health_check.py script and returns the result.
     """
-    return health_check(PROPERTY_FILE, HEALTH_CHECK_LOG)
+    if LOG_LEVEL == "DEBUG":
+        logging.debug(f"Running health check")
+        return True, "All services are healthy."
+    else:
+        return health_check(PROPERTY_FILE, HEALTH_CHECK_LOG)
 
 def get_kafka_status(*args, **kwargs) -> tuple[bool, str]:
     """
@@ -1627,16 +1934,24 @@ def get_kafka_status(*args, **kwargs) -> tuple[bool, str]:
     """
     KAFKA_SCRIPT_PATH = "/home/mongodb/smart_migration/tabulate_data.py"
     try:
-        # Ensure the script has execute permissions (important for security)
-        subprocess.run(["chmod", "+x", KAFKA_SCRIPT_PATH], check=True)
-        result = subprocess.run(["python3", KAFKA_SCRIPT_PATH, "/home/mongodb/smart_migration/" + 'panels.txt'],  # Pass the argument
+        if LOG_LEVEL == "DEBUG":
+            logging.debug(f"Getting Kafka status")
+            return True, "Kafka is active"
+        else:
+            # Ensure the script has execute permissions (important for security)
+            subprocess.run(["chmod", "+x", KAFKA_SCRIPT_PATH], check=True)
+            result = subprocess.run(["python3", KAFKA_SCRIPT_PATH, "/home/mongodb/smart_migration/" + 'panels.txt'],  # Pass the argument
                                  capture_output=True, text=True, check=True)
-        return True, str(result.stdout)
+            logging.info(f"Kafka status: {str(result.stdout)}")
+            return True, str(result.stdout)
     except subprocess.CalledProcessError as e:
+        logging.error(f"Error running Kafka status script: {e.stderr}")
         return False, f"Error running Kafka status script: {e.stderr}"
     except FileNotFoundError:
+        logging.error(f"Kafka status script not found at {KAFKA_SCRIPT_PATH}")
         return False, f"Kafka status script not found at {KAFKA_SCRIPT_PATH}"
     except Exception as e:
+        logging.error(f"An unexpected error occurred: {e}")
         return False, f"An unexpected error occurred: {e}"
 
 # def format(kafka_status_output):
@@ -1710,18 +2025,22 @@ def get_running_methods_status(*args, **kwargs) -> tuple[bool, str]:
     Get the status of the migration in a table format.
     """
     try:
+        if LOG_LEVEL == "DEBUG":
+            logging.debug(f"Getting running methods status")
+            return True, "Getting running methods status"
+        else:
+            kafka_status_output = get_kafka_status()
+            message = ""
 
-        kafka_status_output = get_kafka_status()
-        message = ""
-
-        if "No data found" not in kafka_status_output:
-            message += "\nKafka Status:\n"
-            message += f"```{kafka_status_output}```" 
-
-        print('message', message)
-        return True, format(message)
+            if "No data found" not in kafka_status_output:
+                message += "\nKafka Status:\n"
+                message += f"```{kafka_status_output}```" 
+        
+        logging.info(f"Getting running methods status")
+        return True, format_kafka_status_for_slack(message)
 
     except Exception as e:
+        logging.error(f"Failed to get migration status: {str(e)}")
         return False, f"Failed to get migration status: {str(e)}"
 
 def backup_redis_data(*args, **kwargs) -> tuple[bool, str]:
@@ -1732,57 +2051,64 @@ def backup_redis_data(*args, **kwargs) -> tuple[bool, str]:
         tuple: (success: bool, message: str)
     """
     try:
-        # Create backup directory if it doesn't exist
-        os.makedirs(REDIS_BACKUP_DIR, exist_ok=True)
-        
-        # Generate timestamp
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
-        # Create backup files for all operations
-        get_filename = f"redis_backup_get_{timestamp}.txt"
-        hgetall_filename = f"redis_backup_hgetall_{timestamp}.txt"
-        queue_filename = f"redis_backup_queues_{timestamp}.txt"
-        
-        get_filepath = os.path.join(REDIS_BACKUP_DIR, get_filename)
-        hgetall_filepath = os.path.join(REDIS_BACKUP_DIR, hgetall_filename)
-        queue_filepath = os.path.join(REDIS_BACKUP_DIR, queue_filename)
-        
-        # Get Redis connection details from config
-        redis_host = config_dict.get('redis_uri', 'localhost')
-        redis_port = config_dict.get('redis_port', '6379')
-        
-        # Backup GET operations using redis-cli
-        get_cmd = f"redis-cli -h {redis_host} -p {redis_port} --scan | while read key; do result=$(redis-cli -h {redis_host} -p {redis_port} GET \"$key\" 2>/dev/null); [ -n \"$result\" ] && echo \"$key: $result\"; done > {get_filepath}"
-        subprocess.run(get_cmd, shell=True, check=True)
-        
-        # Backup HGETALL operations using redis-cli
-        hgetall_cmd = f"redis-cli -h {redis_host} -p {redis_port} --scan | while read key; do result=$(redis-cli -h {redis_host} -p {redis_port} HGETALL \"$key\" 2>/dev/null); [ -n \"$result\" ] && echo \"$key:\" && echo \"$result\" && echo \"\"; done > {hgetall_filepath}"
-        subprocess.run(hgetall_cmd, shell=True, check=True)
-        
-        # Backup Queue operations using redis-cli
-        queue_cmd = f"redis-cli -h {redis_host} -p {redis_port} --scan | while read key; do result=$(redis-cli -h {redis_host} -p {redis_port} LRANGE \"$key\" 0 -1 2>/dev/null); [ -n \"$result\" ] && echo \"Queue: $key: $result\"; done > {queue_filepath}"
-        subprocess.run(queue_cmd, shell=True, check=True)
-        
-        # Add headers to the files
-        with open(get_filepath, 'r+') as f:
-            content = f.read()
-            f.seek(0, 0)
-            f.write(f"Redis Backup - GET Operations\nTimestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n{'='*80}\n\n{content}")
-        
-        with open(hgetall_filepath, 'r+') as f:
-            content = f.read()
-            f.seek(0, 0)
-            f.write(f"Redis Backup - HGETALL Operations\nTimestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n{'='*80}\n\n{content}")
-        
-        with open(queue_filepath, 'r+') as f:
-            content = f.read()
-            f.seek(0, 0)
-            f.write(f"Redis Backup - Queue Operations\nTimestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n{'='*80}\n\n{content}")
-        
-        return True, f"Successfully created Redis backups:\nGET: {get_filepath}\nHGETALL: {hgetall_filepath}\nQueues: {queue_filepath}"
+        if LOG_LEVEL == "DEBUG":
+            logging.debug(f"Backing up Redis data")
+            return True, "Backing up Redis data"
+        else:
+            # Create backup directory if it doesn't exist
+            os.makedirs(REDIS_BACKUP_DIR, exist_ok=True)
+                
+            # Generate timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+            # Create backup files for all operations
+            get_filename = f"redis_backup_get_{timestamp}.txt"
+            hgetall_filename = f"redis_backup_hgetall_{timestamp}.txt"
+            queue_filename = f"redis_backup_queues_{timestamp}.txt"
+            
+            get_filepath = os.path.join(REDIS_BACKUP_DIR, get_filename)
+            hgetall_filepath = os.path.join(REDIS_BACKUP_DIR, hgetall_filename)
+            queue_filepath = os.path.join(REDIS_BACKUP_DIR, queue_filename)
+            
+            # Get Redis connection details from config
+            redis_host = config_dict.get('redis_uri', 'localhost')
+            redis_port = config_dict.get('redis_port', '6379')
+            
+            # Backup GET operations using redis-cli
+            get_cmd = f"redis-cli -h {redis_host} -p {redis_port} --scan | while read key; do result=$(redis-cli -h {redis_host} -p {redis_port} GET \"$key\" 2>/dev/null); [ -n \"$result\" ] && echo \"$key: $result\"; done > {get_filepath}"
+            subprocess.run(get_cmd, shell=True, check=True)
+            
+            # Backup HGETALL operations using redis-cli
+            hgetall_cmd = f"redis-cli -h {redis_host} -p {redis_port} --scan | while read key; do result=$(redis-cli -h {redis_host} -p {redis_port} HGETALL \"$key\" 2>/dev/null); [ -n \"$result\" ] && echo \"$key:\" && echo \"$result\" && echo \"\"; done > {hgetall_filepath}"
+            subprocess.run(hgetall_cmd, shell=True, check=True)
+            
+            # Backup Queue operations using redis-cli
+            queue_cmd = f"redis-cli -h {redis_host} -p {redis_port} --scan | while read key; do result=$(redis-cli -h {redis_host} -p {redis_port} LRANGE \"$key\" 0 -1 2>/dev/null); [ -n \"$result\" ] && echo \"Queue: $key: $result\"; done > {queue_filepath}"
+            subprocess.run(queue_cmd, shell=True, check=True)
+            
+            # Add headers to the files
+            with open(get_filepath, 'r+') as f:
+                content = f.read()
+                f.seek(0, 0)
+                f.write(f"Redis Backup - GET Operations\nTimestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n{'='*80}\n\n{content}")
+            
+            with open(hgetall_filepath, 'r+') as f:
+                content = f.read()
+                f.seek(0, 0)
+                f.write(f"Redis Backup - HGETALL Operations\nTimestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n{'='*80}\n\n{content}")
+            
+            with open(queue_filepath, 'r+') as f:
+                content = f.read()
+                f.seek(0, 0)
+                f.write(f"Redis Backup - Queue Operations\nTimestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n{'='*80}\n\n{content}")
+            
+            logging.info(f"Successfully created Redis backups")
+            return True, f"Successfully created Redis backups:\nGET: {get_filepath}\nHGETALL: {hgetall_filepath}\nQueues: {queue_filepath}"
     except subprocess.CalledProcessError as e:
+        logging.error(f"Failed to execute Redis CLI command: {str(e)}")
         return False, f"Failed to execute Redis CLI command: {str(e)}"
     except Exception as e:
+        logging.error(f"Failed to create Redis backups: {str(e)}")
         return False, f"Failed to create Redis backups: {str(e)}"
 
 tools = [
@@ -1793,7 +2119,7 @@ tools = [
     Tool.from_function(func=delete_consumer_keys, name="delete_consumer_keys", description="Deletes all Redis consumer keys."),
     Tool.from_function(func=delete_all_keys, name="delete_all_keys", description="Deletes all keys in Redis."),
     Tool.from_function(func=delete_specific_key, name="delete_specific_key", description="Deletes a specific Redis key."),
-    Tool.from_function(func=get_methods_count_form_redis, name="get_methods_count_form_redis", description="Gets the count of redis keys referred as methods, starting with 'read' and 'write'"),
+    Tool.from_function(func=get_methods_count_from_redis, name="get_methods_count_from_redis", description="Gets the count of redis keys referred as methods, starting with 'read' and 'write'"),
     Tool.from_function(func=get_total_keys, name="get_total_keys", description="Gets the total number of keys in Redis."),
     Tool.from_function(func=check_redis_status, name="check_redis_status", description="Checks the status of the Redis server."),
     Tool.from_function(func=get_kafka_topics_count, name="get_kafka_topics_count", description="Gets the count of Kafka topics."),
@@ -1830,20 +2156,26 @@ tools = [
     Tool.from_function(func=backup_redis_data, name="backup_redis_data", description="Takes backup of Redis data in human-readable format for both GET and HGETALL operations."),
     Tool.from_function(func=create_ts_dbs_collections, name="create_ts_dbs_collections", description="Reads the csv containing the panels and cids and creates the time series databases or if databases already exist, it creates the collections."),
     Tool.from_function(func=create_panels_cid_csv_file, name="create_panels_cid_csv_file", description="Creates a csv file containing the panels and cids."),
-    
-
     Tool.from_function(func=get_migration_status, name="get_migration_status", description="get the status of the migration in a formated string"),
     Tool.from_function(func=get_migrating_panels, name="get_migrating_panels", description="Gets the panels that are currently being migrated in a formated way"),
     Tool.from_function(func=get_running_methods_status, name="get_running_methods_status", description="Get running methods status."),
 ]
 
-# custom_prompt_template = """"""
+custom_prompt_template = """You are a smart migration agent that can help with the migration of data from mongo5 to mongo7.
+To migrate, we have scripts, and to run those scripts, we have automation scripts. This migration is mission-critical, and we need to ensure its success without any issues. Therefore, we must be very careful and specific with the commands or processes we are going to run.
+You are a smart agent that will help in running the automation scripts that are already written.
+You will also help in tracking the status of the migration with respect to all the components involved, including the processes, Kafka, Redis, etc., and all other relevant components.
+If there is any confusion in running a function, please ask me to clarify and do not run the function without my explicit confirmation.
+Also keep track of function that are executed previously which will help in debugging 
+Remember same query can be asked multiple times don't get confused and change the function to be executed when asked multiple times. call the same function again or if confusion, ask me to clarify.
+"""
+
 memory = ConversationBufferMemory()
-prompt = hub.pull("hwchase17/react")
-# custom_prompt = PromptTemplate(
-#     template=custom_prompt_template
-# )
-agent = create_react_agent(llm, tools, prompt)
+# prompt = hub.pull("hwchase17/react")
+custom_prompt = PromptTemplate(
+    template=custom_prompt_template
+)
+agent = create_react_agent(llm, tools, custom_prompt)
 agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True, memory=memory)
 
 def process_smart_query(query):
@@ -1860,9 +2192,12 @@ def process_smart_query(query):
     """
     try:
         user_query = query
+        logging.info(f"Processing query: {user_query}")
         output = agent_executor.invoke({"input": user_query})
+        logging.info(f"Query processed successfully: {output['output']}")
         return True, output['output']
     except Exception as e:
+        logging.error(f"Failed to process query: {str(e)}")
         return False, f"Failed to process query: {str(e)}"
 
 # API Endpoints
@@ -1906,7 +2241,7 @@ def api_delete_specific_key(key):
 
 @app.route('/redis/methods/count', methods=['GET'])
 def api_get_methods_count():
-    success, result = get_methods_count_form_redis()
+    success, result = get_methods_count_from_redis()
     if success:
         return jsonify({"success": True, "data": result})
     return jsonify({"success": False, "message": result})
@@ -1936,9 +2271,9 @@ def message_slack(message):
     """
     Sends a message to the Slack channel using the Slack API.
     """
-    print(f"Inside message_slack function")
+
     if not SLACK_URL:
-        print("Error: SLACK_URL environment variable not set.")
+        logging.error("Error: SLACK_URL environment variable not set.")
         return {
             'statusCode': 500,
             'body': "Error: SLACK_URL environment variable not set."
@@ -1947,33 +2282,30 @@ def message_slack(message):
     slack_data = json.dumps({"text": message}).encode('utf-8')
     req = Request(SLACK_URL, data=slack_data, method='POST')
     req.add_header('Content-Type', 'application/json')
-    print(f"Headers Added")
     try:
-        print('inside try')
-        print('req', req.full_url, req.data, req.headers) # Print more details for debugging
+        logging.info(f"Sending message to Slack")
         with urlopen(req) as response:
-            print('response', response.status)
             status_code = response.status
             data = response.read().decode('utf-8')
-            print(f"Successfully received response from Slack: {data}")
+            logging.info(f"Successfully received response from Slack: {data}")
             return {
                 'statusCode': status_code,
                 'body': data
             }
     except HTTPError as e:
-        print(f"HTTP Error calling Slack API: {e.code} {e.reason}")
+        logging.error(f"HTTP Error calling Slack API: {e.code} {e.reason}")
         return {
             'statusCode': e.code,
             'body': f"HTTP Error: {e.code} {e.reason}"
         }
     except URLError as e:
-        print(f"URL Error calling Slack API: {e.reason}")
+        logging.error(f"URL Error calling Slack API: {e.reason}")
         return {
             'statusCode': 500,
             'body': f"URL Error: {e.reason}"
         }
     except Exception as e:
-        print(f"An unexpected error occurred: {e}")
+        logging.error(f"An unexpected error occurred: {e}")
         return {
             'statusCode': 500,
             'body': f"Unexpected Error: {e}"
