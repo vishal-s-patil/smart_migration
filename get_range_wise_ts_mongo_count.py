@@ -49,10 +49,11 @@ if __name__ == "__main__":
     total_count = 0
 
     start_range = int(sys.argv[3])
-    end_range = int(sys.argv[5])
+    end_range = int(sys.argv[4])
     max_uid = int(sys.argv[4])
     gap = int(sys.argv[5])
     ev_type = sys.argv[6]
+
 
     print("Counting user events for UID ranges:")
 
