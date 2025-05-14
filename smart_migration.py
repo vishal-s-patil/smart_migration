@@ -1281,7 +1281,7 @@ def check_migration_processes(*args, **kwargs) -> tuple[bool, dict]:
                     shell=True
                 )
                 # If grep finds itself and the process, count > 1
-                processes[process] = len(result.stdout.splitlines()) > 1
+                processes[process] = len([line for line in result.stdout.splitlines() if "grep" not in line]) > 0
                 logging.info(result.stdout)
                 logging.info(f"Numbre of {process} processes: {len(result.stdout.splitlines())}")
                 
@@ -1292,7 +1292,7 @@ def check_migration_processes(*args, **kwargs) -> tuple[bool, dict]:
                 text=True,
                 shell=True
             )
-            processes['java_write'] = len(result.stdout.splitlines()) > 1
+            processes['java_write'] = len([line for line in result.stdout.splitlines() if "grep" not in line]) > 0
             logging.info(f"Number of java write process: {len(result.stdout.splitlines())}")
             # Check for java read process
             result = subprocess.run(
@@ -1301,7 +1301,7 @@ def check_migration_processes(*args, **kwargs) -> tuple[bool, dict]:
                 text=True,
                 shell=True
             )
-            processes['java_read'] = len(result.stdout.splitlines()) > 1
+            processes['java_read'] = len([line for line in result.stdout.splitlines() if "grep" not in line]) > 0
             logging.info(f"Number of java read process: {len(result.stdout.splitlines())}")
 
 
