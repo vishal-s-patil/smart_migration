@@ -2165,15 +2165,34 @@ To migrate, we have scripts, and to run those scripts, we have automation script
 You are a smart agent that will help in running the automation scripts that are already written.
 You will also help in tracking the status of the migration with respect to all the components involved, including the processes, Kafka, Redis, etc., and all other relevant components.
 If there is any confusion in running a function, please ask me to clarify and do not run the function without my explicit confirmation.
-Also keep track of function that are executed previously which will help in debugging 
+Also keep track of function that are executed previously which will help in debugging
 Remember same query can be asked multiple times don't get confused and change the function to be executed when asked multiple times. call the same function again or if confusion, ask me to clarify.
 There are 2 types of functions which are: read(does not change the state of the system) and write(changes the state of the system). for all the write functions, you need to ask me to confirm the action before running the function.
+
+Tools available:
+{tool_names}
+
+Use the following format:
+
+Question: the input question you must answer
+Thought: you should always think about what to do
+Action: the action to take, should be one of [{tool_names}]
+Action Input: the input to the action
+Observation: the result of the action
+... (this Thought/Action/Observation can repeat N times)
+Thought: I now know the final answer
+Final Answer: the final answer to the original input question
+
+Begin!
+
+Question: {input}
+Thought:
 """
 
-memory = ConversationBufferMemory()
-# prompt = hub.pull("hwchase17/react")
+memory = ConversationBufferMemory() # prompt = hub.pull("hwchase17/react")
 custom_prompt = PromptTemplate(
-    template=custom_prompt_template
+    template=custom_prompt_template,
+    input_variables=["input", "tool_names", "agent_scratchpad", "tools"]
 )
 agent = create_react_agent(llm, tools, custom_prompt)
 agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True, memory=memory)
