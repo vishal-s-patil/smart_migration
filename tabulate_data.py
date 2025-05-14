@@ -123,6 +123,10 @@ def fetch_and_display_redis_data(file_name=None, selected_columns=None, **filter
 
     if selected_columns:
         df = df[selected_columns]
+
+    if df.empty:
+        print("No data found.")
+        return
     
     print(tabulate(df, headers='keys', tablefmt='pretty', showindex=False))
 
