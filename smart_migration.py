@@ -1300,8 +1300,17 @@ def check_migration_processes(*args, **kwargs) -> tuple[bool, dict]:
                 shell=True
             )
             processes['java_read'] = len(result.stdout.splitlines()) > 1
-                
-            return True, processes
+
+            # if all of them are false retunrn false 
+            is_running = False
+            for _, status in processes.items():
+                if status:
+                    is_running = True
+                    break
+            if is_running:
+                return True, processes
+            else:
+                return False, processes
     except Exception as e:
         logging.error(f"Failed to check migration processes: {str(e)}")
         return False, f"Failed to check migration processes: {str(e)}"
