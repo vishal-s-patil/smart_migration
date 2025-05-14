@@ -2187,6 +2187,7 @@ Begin!
 
 Question: {input}
 Thought:
+{agent_scratchpad}
 """
 
 memory = ConversationBufferMemory() # prompt = hub.pull("hwchase17/react")
