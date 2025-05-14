@@ -2372,7 +2372,7 @@ def api_smart_query():
 
         success, result = process_smart_query(query)
         
-        message_slack(result)
+        # message_slack(result)
 
         if success:
             return jsonify({
