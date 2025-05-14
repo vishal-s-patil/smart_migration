@@ -1303,14 +1303,14 @@ def check_migration_processes(*args, **kwargs) -> tuple[bool, dict]:
 
             # if all of them are false retunrn false 
             is_running = False
-            for _, status in processes.items():
+            for process, status in processes.items():
                 if status:
+                    logging.info(f"{process} is running.")
                     is_running = True
-                    break
             if is_running:
                 return True, processes
             else:
-                return False, processes
+                return False, "No processes are running\n" + str(processes)
     except Exception as e:
         logging.error(f"Failed to check migration processes: {str(e)}")
         return False, f"Failed to check migration processes: {str(e)}"
