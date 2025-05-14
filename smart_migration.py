@@ -1278,6 +1278,7 @@ def check_migration_processes(*args, **kwargs) -> tuple[bool, dict]:
                     f"ps -eaf | grep {process}",
                     capture_output=True,
                     text=True
+                    shell=True
                 )
                 # If grep finds itself and the process, count > 1
                 processes[process] = len(result.stdout.splitlines()) > 1
@@ -1287,6 +1288,7 @@ def check_migration_processes(*args, **kwargs) -> tuple[bool, dict]:
                 f"ps -eaf | grep java | grep write",
                 capture_output=True,
                 text=True
+                shell=True
             )
             processes['java_write'] = len(result.stdout.splitlines()) > 1
             
@@ -1295,6 +1297,7 @@ def check_migration_processes(*args, **kwargs) -> tuple[bool, dict]:
                 f"ps -eaf | grep java | grep read",
                 capture_output=True,
                 text=True
+                shell=True
             )
             processes['java_read'] = len(result.stdout.splitlines()) > 1
                 
