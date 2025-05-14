@@ -81,6 +81,9 @@ def send_slack_alert(message):
         logger.warning("Slack webhook URL is not configured. Alert not sent.")
         return
 
+    if message == "":
+        return 
+
     payload = {"text": message}
     logger.debug(f"Sending Slack alert: {json.dumps(payload)}")
     try:
