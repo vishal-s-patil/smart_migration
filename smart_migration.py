@@ -2190,12 +2190,13 @@ Thought:
 {agent_scratchpad}
 """
 
-memory = ConversationBufferMemory() # prompt = hub.pull("hwchase17/react")
-custom_prompt = PromptTemplate(
-    template=custom_prompt_template,
-    input_variables=["input", "tool_names", "agent_scratchpad"]
-)
-agent = create_react_agent(llm, tools, custom_prompt)
+memory = ConversationBufferMemory() 
+prompt = hub.pull("hwchase17/react")
+# custom_prompt = PromptTemplate(
+#     template=custom_prompt_template,
+#     input_variables=["input", "tool_names", "agent_scratchpad"]
+# )
+agent = create_react_agent(llm, tools, prompt)
 agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True, memory=memory)
 
 def process_smart_query(query):
@@ -2213,7 +2214,7 @@ def process_smart_query(query):
     try:
         user_query = query
         logging.info(f"Processing query: {user_query}")
-        output = agent_executor.invoke({"input": user_query, "tools":tools})
+        output = agent_executor.invoke({"input": user_query})
         logging.info(f"Query processed successfully: {output['output']}")
         return True, output['output']
     except Exception as e:
