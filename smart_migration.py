@@ -2193,7 +2193,8 @@ Thought:
 memory = ConversationBufferMemory() # prompt = hub.pull("hwchase17/react")
 custom_prompt = PromptTemplate(
     template=custom_prompt_template,
-    input_variables=["input", "tool_names", "agent_scratchpad", "tools"]
+    input_variables=["input", "tool_names", "agent_scratchpad"],
+    tools=tools
 )
 agent = create_react_agent(llm, tools, custom_prompt)
 agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True, memory=memory)
