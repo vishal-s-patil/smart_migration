@@ -1291,7 +1291,7 @@ def check_migration_processes(*args, **kwargs) -> tuple[bool, dict]:
                 shell=True
             )
             processes['java_write'] = len(result.stdout.splitlines()) > 1
-            
+            logging.info(f"Number of java write process: {len(result.stdout.splitlines())}")
             # Check for java read process
             result = subprocess.run(
                 f"ps -eaf | grep java | grep read",
@@ -1300,6 +1300,8 @@ def check_migration_processes(*args, **kwargs) -> tuple[bool, dict]:
                 shell=True
             )
             processes['java_read'] = len(result.stdout.splitlines()) > 1
+            logging.info(f"Number of java read process: {len(result.stdout.splitlines())}")
+
 
             # if all of them are false retunrn false 
             is_running = False
