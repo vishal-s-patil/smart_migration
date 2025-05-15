@@ -157,13 +157,17 @@ def wait_for_process_to_complete(pid, panel_name, method, check_interval=1):
         time.sleep(check_interval)
     
 
-def run_migration(redis_client, redis_key):
+def run_migration(redis_client, redis_key, custom_property_file):
     redis_key = redis_key + "_queue"
     while True:
         panel_data = redis_client.lpop(redis_key)
         if panel_data:
             panel_data = ast.literal_eval(panel_data)  
-            command = "/home/smartechro/mongo_migration.sh "
+            if custom_property_file:
+                command = "/home/smartechro/mongo_migration_custom_propertyfile.sh "
+            else:
+                command = "/home/smartechro/mongo_migration.sh "
+
             command += redis_key.removesuffix("_queue")
             panel_name = panel_data.get('panel_name')
             command += f" {panel_name}" 
@@ -177,6 +181,8 @@ def run_migration(redis_client, redis_key):
 
             # process = run_command_get_pid(f"sleep {random.randint(5, 10)}")
             log_message('INFO', {'msg': "starting command", "command": {command}})
+            if custom_property_file:
+                command += " " + custom_property_file
             process = run_command_get_pid(command)
             time.sleep(SLEEP_TIME_BEFORE_FETCHING_PID_SEC)
 
@@ -217,11 +223,11 @@ def run_migration(redis_client, redis_key):
             return None
 
 
-def run_migration_all(redis_client, redis_keys):
+def run_migration_all(redis_client, redis_keys, custom_property_file):
     """Starts independent threads for each Redis key to handle processes concurrently."""
     threads = []
     for redis_key in redis_keys:
-        thread = threading.Thread(target=run_migration, args=(redis_client, redis_key), daemon=True)
+        thread = threading.Thread(target=run_migration, args=(redis_client, redis_key, custom_property_file), daemon=True)
         thread.start()
         threads.append(thread)
 
@@ -233,10 +239,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the producer script with logging and optional methods.")
     parser.add_argument("log_file_name", help="Name of the log file")
     parser.add_argument("--methods", help="Comma-separated list of methods", default="")
+    parser.add_argument("--custom-property-file", help="Path to the custom property file", default=None)
 
     args = parser.parse_args()
 
     log_file_name = args.log_file_name
+    custom_property_file = args.custom_property_file
     producer_methods = args.methods.split(",") if args.methods else ["readUserAttributes", "readAnonUserAttributes", "readDisableUserAttributes", "readEngagementEventsWithMetaKey", "readAnonEngagementEventsWithMetaKey", "readDisableEngagementEventsWithMetaKey", "readUserDetailsWithMetaKey", "readAnonUserDetailsWithMetaKey", "readDisableUserDetailsWithMetaKey"]
     # if len(sys.argv) == 2:
     #     log_file_name = sys.argv[1]
@@ -245,4 +253,4 @@ if __name__ == "__main__":
     #     exit()
 
     setup_logger(log_file_name)
-    run_migration_all(r, producer_methods)
+    run_migration_all(r, producer_methods, custom_property_file)
