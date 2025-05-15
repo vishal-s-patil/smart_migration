@@ -221,14 +221,14 @@ def run_migration_all(redis_client, redis_keys, custom_property_file):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the producer script with logging and optional methods.")
     parser.add_argument("log_file_name", help="Name of the log file")
-    parser.add_argument("--methods", help="Comma-separated list of methods", default="")
+    parser.add_argument("--methods", help="Comma-separated list of methods", default=None)
     parser.add_argument("--custom-property-file", help="Path to the custom property file", default=None)
     
     args = parser.parse_args()
 
     log_file_name = args.log_file_name
     custom_property_file = args.custom_property_file
-    consumer_methods = args.methods.split(",") if args.methods else ["writeUserAttributes", "writeAnonUserAttributes", "writeDisableUserAttributes", "writeEngagementEventsToUserEvents", "writeAnonEngagementEventsToAnonUserEvents", "writeDisableEngagementEventsToDisabledUserEvents", "writeUserDetailsToUserEvents", "writeAnonUserDetailsToAnonUserEvents", "writeDisableUserDetailsToDisableUserEvents"]
+    consumer_methods = args.methods.split(",") if args.methods != None else ["writeUserAttributes", "writeAnonUserAttributes", "writeDisableUserAttributes", "writeEngagementEventsToUserEvents", "writeAnonEngagementEventsToAnonUserEvents", "writeDisableEngagementEventsToDisabledUserEvents", "writeUserDetailsToUserEvents", "writeAnonUserDetailsToAnonUserEvents", "writeDisableUserDetailsToDisableUserEvents"]
 
 
     # if len(sys.argv) == 2:

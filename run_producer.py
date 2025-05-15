@@ -238,7 +238,7 @@ def run_migration_all(redis_client, redis_keys, custom_property_file):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the producer script with logging and optional methods.")
     parser.add_argument("log_file_name", help="Name of the log file")
-    parser.add_argument("--methods", help="Comma-separated list of methods", default="")
+    parser.add_argument("--methods", help="Comma-separated list of methods", default=None)
     parser.add_argument("--custom-property-file", help="Path to the custom property file", default=None)
 
     args = parser.parse_args()

@@ -1,4 +1,5 @@
 from kafka.admin import KafkaAdminClient, NewTopic
+import argparse
 import sys
 
 PROPERTY_FILE = "/etc/mongoremodel.properties"
@@ -44,12 +45,24 @@ def create_kafka_topic(topic_name, bootstrap_servers, num_partitions=10, replica
         admin_client.close()
 
 if __name__ == "__main__":
-    if len(sys.argv) == 3:
-        panels_file_name = sys.argv[1]
-        number_of_partitions = int(sys.argv[2])
-        replication_factor = 1
+    # if len(sys.argv) == 3:
+    #     panels_file_name = sys.argv[1]
+    #     number_of_partitions = int(sys.argv[2])
+    #     replication_factor = 1
 
-    methods = ['AnonEngagementDetails', 'AnonUserAttributes', 'AnonUserEvents', 'DisableEngagementDetails', 'DisableUserAttributes', 'DisableUserEvents', 'EngagementDetails', 'UserAttributes', 'UserEvents']
+    parser = argparse.ArgumentParser(description="Process input files and parameters.")
+    parser.add_argument("panels_file_name", help="Name of the panels file")
+    parser.add_argument("number_of_partitions", type=int, help="Number of partitions")
+    parser.add_argument("replication_factor", type=int, help="Replication factor", default=10)
+    parser.add_argument("--methods", help="Comma-separated list of methods", default=None)
+
+    args = parser.parse_args()
+
+    panels_file_name = args.panels_file_name
+    number_of_partitions = args.number_of_partitions
+    replication_factor = args.replication_factor
+    methods = args.methods.split(",") if args.methods else ['AnonEngagementDetails', 'AnonUserAttributes', 'AnonUserEvents', 'DisableEngagementDetails', 'DisableUserAttributes', 'DisableUserEvents', 'EngagementDetails', 'UserAttributes', 'UserEvents']
+
     
     with open(panels_file_name, 'r') as f:
         panels = [panel.strip() for panel in f]
