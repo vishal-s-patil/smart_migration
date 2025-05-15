@@ -53,7 +53,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Process input files and parameters.")
     parser.add_argument("panels_file_name", help="Name of the panels file")
     parser.add_argument("number_of_partitions", type=int, help="Number of partitions")
-    parser.add_argument("replication_factor", type=int, help="Replication factor", default=10)
+    parser.add_argument("--replication-factor", type=int, help="Replication factor", default=1)
     parser.add_argument("--methods", help="Comma-separated list of methods", default=None)
 
     args = parser.parse_args()
