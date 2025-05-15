@@ -286,8 +286,8 @@ if __name__ == "__main__":
                     log_message('ERROR', {'msg': "error getting data from consumer", 'key':consumer_redis_key, 'field': consumer_field, 'err': e})
 
                 data = json.loads(data)
-                if data['env'] != current_env:
-                    continue
+                # if data['env'] != current_env:
+                #     continue
                 
                 status = data['status']
                 consumer_pid = data['pid']
