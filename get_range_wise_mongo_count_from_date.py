@@ -209,7 +209,7 @@ if __name__ == "__main__":
     parser.add_argument("coll_name", help="Name of the collection")
     parser.add_argument("start_uid", type=int, help="Start uid")
     parser.add_argument("end_uid", type=int, help="End uid")
-    parser.add_argument("--batch", type=int, help="Batch size", default=10000)
+    parser.add_argument("batch", type=int, help="Batch size", default=10000)
     parser.add_argument("--ad", type=int, help="Ad", default=240401)
     parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
     args = parser.parse_args()
