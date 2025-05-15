@@ -66,6 +66,6 @@ if __name__ == "__main__":
         if end_range > max_uid:
             end_range = max_uid
 
-    print(f"\n[Destination] [ev_type: {ev_type}] [panel: {DATABASE_NAME}] [uid_range: {start_range:,} to {end_range:,}] [total_count: {total_count}")
+    print(f"\n[Destination] [ev_type: {ev_type}] [panel: {DATABASE_NAME}] [uid_range: {start_range:,} to {end_range:,}] [total_count: {total_count}]")
 
     client.close()
