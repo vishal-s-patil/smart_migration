@@ -193,9 +193,9 @@ def count_documents_in_batches(mongo_config, label, panel_name, coll_name, start
             if count is not None:
                 total += count
                 if verbose:
-                    print(f"[{label}] UIDs {current} - {current + batch - 1}: Count (events with ad > 240401) = {count}")
+                    print(f"[{label}] UIDs {current} - {current + batch - 1}: Count (events with ad > {ad}) = {count}")
             current += batch
-        print(f"\n[{label}] [panel: {panel_name}] [ev_type: {coll_name}] [uid_range: {start_uid:,} to {end_uid:,}] [total_events_ad_gt_240401: {total}]")
+        print(f"\n[{label}] [panel: {panel_name}] [ev_type: {coll_name}] [uid_range: {start_uid:,} to {end_uid:,}] [total_events_ad_gt_{ad}: {total}]")
 
     except ConnectionFailure as e:
         print(f"Failed to connect to {label} MongoDB: {e}")
