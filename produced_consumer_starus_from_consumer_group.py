@@ -72,7 +72,7 @@ def format_log_entry(group_name, output):
         if produced == consumed and lag == 0:
             return f"[INFO] {group_name} :: {output}"
         else:
-            return f"[WARNING] {group_name} :: {output}"
+            return f"[ERROR] {group_name} :: {output}"
     else:
         return f"[INFO] {group_name} :: {output}" # Default to INFO for other outputs
 
