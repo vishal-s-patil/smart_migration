@@ -59,7 +59,7 @@ if __name__ == "__main__":
 
     while start_range <= max_uid:
         current_count = count_user_events(db, start_range, end_range, ev_type)
-        # print(f"UID Range: {start_range:,} to {end_range:,} - Count: {current_count:,}")
+        print(f"UID Range: {start_range:,} to {end_range:,} - Count: {current_count:,}")
         total_count += current_count
         start_range = end_range + 1
         end_range += gap

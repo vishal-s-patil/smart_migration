@@ -191,7 +191,7 @@ def count_documents_in_batches(mongo_config, label):
             # count = col.count_documents({"uid": {"$gte": current, "$lt": current + batch}})
             count = get_count(col, current, current+batch)
             total += count
-            # print(f"[{label}] UIDs {current} - {current + batch - 1}: Count = {count}")
+            print(f"[{label}] UIDs {current} - {current + batch - 1}: Count = {count}")
             current += batch
         # print(f"[{label}] [total_count: {total}]")
         print(f"\n[{label}] [panel: {panel_name}] [ev_type: {coll_name}] [uid_range: {start_uid:,} to {end_uid:,}] [total_count: {total}]")

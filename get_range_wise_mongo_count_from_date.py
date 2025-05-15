@@ -199,7 +199,7 @@ def count_documents_in_batches(mongo_config, label):
             count = get_count_with_ad_filter(col, current, current+batch)
             if count is not None:
                 total += count
-                # print(f"[{label}] UIDs {current} - {current + batch - 1}: Count (events with ad > 240401) = {count}")
+                print(f"[{label}] UIDs {current} - {current + batch - 1}: Count (events with ad > 240401) = {count}")
             current += batch
         print(f"\n[{label}] [panel: {panel_name}] [ev_type: {coll_name}] [uid_range: {start_uid:,} to {end_uid:,}] [total_events_ad_gt_240401: {total}]")
 
