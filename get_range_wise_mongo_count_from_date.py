@@ -1,6 +1,7 @@
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
 import sys
+import argparse
 
 PROPERTY_FILE = "/etc/mongoremodel.properties"
 config_dict = {}
@@ -101,17 +102,11 @@ def parse_mongo_uri(uri: str) -> dict:
 source_mongo_config = parse_mongo_uri(config_dict['src_mongo_uri'])
 destination_mongo_config = parse_mongo_uri(config_dict['dst_mongo_uri'])
 
-start_uid = int(sys.argv[3]) # 3000000
-end_uid = int(sys.argv[4]) # 10314714 # 14448417
-batch = int(sys.argv[5])
-
 def get_mongo_client(config):
     uri = f"mongodb://{config['user']}:{config['passwd']}@{config['host']}:{config['port']}/{config['auth_source']}"
     return MongoClient(uri)
 
-ad=int(sys.argv[6])
-
-def get_count_with_ad_filter(collection_object, start_uid, end_uid):
+def get_count_with_ad_filter(collection_object, start_uid, end_uid, ad):
     """
     Calculates the total count of events (array elements) across all relevant array fields
     for documents within a specified range of uids, considering only those events
@@ -186,20 +181,19 @@ def get_count_with_ad_filter(collection_object, start_uid, end_uid):
         print(f"An error occurred during aggregation: {e}")
         return None
 
-def count_documents_in_batches(mongo_config, label):
+def count_documents_in_batches(mongo_config, label, panel_name, coll_name, start_uid, end_uid, batch, ad, verbose):
     try:
         client = get_mongo_client(mongo_config)
-        panel_name = sys.argv[1]
-        coll_name = sys.argv[2]
         db = client[panel_name]  # Adjust DB name if different
         col = db[coll_name]
         total = 0
         current = start_uid
         while current < end_uid:
-            count = get_count_with_ad_filter(col, current, current+batch)
+            count = get_count_with_ad_filter(col, current, current+batch, ad)
             if count is not None:
                 total += count
-                print(f"[{label}] UIDs {current} - {current + batch - 1}: Count (events with ad > 240401) = {count}")
+                if verbose:
+                    print(f"[{label}] UIDs {current} - {current + batch - 1}: Count (events with ad > 240401) = {count}")
             current += batch
         print(f"\n[{label}] [panel: {panel_name}] [ev_type: {coll_name}] [uid_range: {start_uid:,} to {end_uid:,}] [total_events_ad_gt_240401: {total}]")
 
@@ -207,5 +201,26 @@ def count_documents_in_batches(mongo_config, label):
         print(f"Failed to connect to {label} MongoDB: {e}")
 
 # Run for source
-count_documents_in_batches(source_mongo_config, "Source")
-# count_documents_in_batches(destination_mongo_config, "Destination")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Process input files and parameters.")
+    parser.add_argument("panel_name", help="Name of the panel")
+    parser.add_argument("coll_name", help="Name of the collection")
+    parser.add_argument("start_uid", type=int, help="Start uid")
+    parser.add_argument("end_uid", type=int, help="End uid")
+    parser.add_argument("batch", type=int, help="Batch size", default=10000)
+    parser.add_argument("ad", type=int, help="Ad", default=240401)
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
+    args = parser.parse_args()
+
+    panel_name = args.panel_name
+    coll_name = args.coll_name
+    start_uid = args.start_uid
+    end_uid = args.end_uid
+    batch = args.batch
+    ad = args.ad
+    verbose = args.verbose
+    
+    count_documents_in_batches(source_mongo_config, "Source", panel_name, coll_name, start_uid, end_uid, batch, ad, verbose)
+
