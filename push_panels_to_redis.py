@@ -298,7 +298,7 @@ if __name__ == "__main__":
             clients = [[name, int(num) if num.isdigit() else None] for name, num in clients]
             for name, num in clients:
                 if num is None:
-                    log_message("ERROR", {"mag": "client not found", "client": name})
+                    log_message("ERROR", {"mag": "client not found", "client": name, "coll_type": command[1]})
                     clients.remove([name, num])
                     continue
 
